@@ -128,21 +128,21 @@ TEST_CASE("operator==", "[hash_map]") {
 
     
 
-    CHECK(hmap1.operator==(hmap2));
-    CHECK(hmap2.operator==(hmap3));
+    CHECK(hmap1 == hmap2);
+    CHECK(hmap2 == hmap3);
 
     hmap1[4] = "ab";
     hmap1[1] = "bc";
 
     hmap2[1] = "ab";
     hmap2[4] = "bc";
-    CHECK(!hmap1.operator==(hmap2));
-    CHECK(!hmap1.operator==(hmap3));
+    CHECK(!(hmap1 == hmap2));
+    CHECK(!(hmap1 == hmap3));
 
     hmap3[1] = "ab";
     hmap3[4] = "bc";
-    CHECK(hmap3.operator==(hmap2));
-    CHECK(!hmap3.operator==(hmap1));
+    CHECK(hmap3 == hmap2);
+    CHECK(!(hmap3 == hmap1));
 }
 
 TEST_CASE("count()", "[hash_map]") {
@@ -204,8 +204,9 @@ TEST_CASE("InputIterator constructor", "[hash_map]") {
 TEST_CASE("allocator constructor, get_allocator()", "[hash_map]") {
     fefu::allocator<pair<const int, string>> t;
     fefu::hash_map<int, string> hmap(t);
+    auto alloc = hmap.get_allocator();
 
-    CHECK(typeid(t).name() == typeid(hmap.get_allocator()).name());
+    CHECK(typeid(t).name() == typeid(alloc).name());
 }
 
 TEST_CASE("Move constructor", "[hash_map]") {
@@ -257,6 +258,105 @@ TEST_CASE("Init list constructor", "[hash_map]") {
     CHECK(hmap[3] == "test");
 }
 
+TEST_CASE("Assignment operators", "[hash_map]") {
+    fefu::hash_map<int, string> hmap1(10);
+    fefu::hash_map<int, string> hmap2(20);
+    hmap2 = hmap1;
+    CHECK(hmap1 == hmap2);
+
+    fefu::hash_map<int, string> hmap3(30);
+    hmap3 = std::move(hmap1);
+    CHECK(hmap3 == hmap2);
+
+    hmap2 = { pair<int, string>(1, "aba"),
+                pair<int, string>(2, "caba"),
+                pair<int, string>(1, "caba"),
+                pair<int, string>(2, "aba"),
+                pair<int, string>(1, "aba"),
+                pair<int, string>(3, "test") };
+    REQUIRE(hmap2.size() == 3);
+    REQUIRE(hmap2.contains(1));
+    REQUIRE(hmap2.contains(2));
+    REQUIRE(hmap2.contains(3));
+    CHECK(hmap2[1] == "aba");
+    CHECK(hmap2[2] == "aba");
+    CHECK(hmap2[3] == "test");
+}
+
+TEST_CASE("Size", "[hash_map]") {
+    fefu::hash_map<int, string> hmap(10);
+
+    CHECK(hmap.empty());
+
+    hmap[1] = "aba";
+    hmap[2] = "caba";
+    hmap[3] = "test";
+
+    CHECK(!hmap.empty());
+    CHECK(hmap.size() == 3);
+    CHECK(hmap.max_size() == MAXSIZE_T);
+}
+
+
+TEST_CASE("Non-const iterators", "[hash_map_iterator]") {
+    fefu::hash_map<int, string> hmap(20);
+
+    CHECK(hmap.begin() == hmap.end());
+
+    hmap[1] = "a";
+    hmap[-1] = "b";
+    hmap[3] = "c";
+    hmap[6] = "d";
+    fefu::hash_map_iterator<std::pair<const int, string>> it = hmap.begin();
+    fefu::hash_map_const_iterator<std::pair<const int, string>> constIt(it);
+    CHECK(*it == *constIt);
+
+    CHECK(hmap[it->first] == it->second);
+
+    fefu::hash_map_iterator<std::pair<const int, string>> tmp = it;
+    auto tmp2 = it++;
+    CHECK(tmp2 == tmp);
+    CHECK(tmp != it);
+
+    CHECK(hmap[(*it).first] == (*it).second);
+    ++it;
+    CHECK(hmap[it->first] == it->second);
+    auto tmp0 = hmap[it->first];
+    tmp = it++;
+    CHECK(hmap[tmp->first] == tmp0);
+    CHECK(++it == hmap.end());
+    CHECK_THROWS(++it);
+}
+
+TEST_CASE("Const iterators", "[hash_map_iterator]") {
+    const fefu::hash_map<int, string> emptyHmap;
+    CHECK(emptyHmap.begin() == emptyHmap.end());
+    CHECK(emptyHmap.cbegin() == emptyHmap.cend());
+
+    fefu::hash_map<int, string> hmap0(20);
+    hmap0[1] = "a";
+    hmap0[-1] = "b";
+    hmap0[3] = "c";
+    hmap0[6] = "d";
+    const fefu::hash_map<int, string> hmap(hmap0);
+    auto it = hmap.begin();
+    CHECK(it == hmap.cbegin());
+    CHECK(hmap.at(it->first) == it->second);
+
+    auto tmp = it;
+    auto tmp2 = it++;
+    CHECK(tmp2 == tmp);
+    CHECK(tmp != it);
+
+    CHECK(hmap.at((*it).first) == (*it).second);
+    ++it;
+    CHECK(hmap.at(it->first) == it->second);
+    auto tmp0 = hmap.at(it->first);
+    auto tmp3 = it++;
+    CHECK(hmap.at(tmp3->first) == tmp0);
+    CHECK(++it == hmap.end());
+    CHECK_THROWS(++it);
+}
 
 // ===========================================
 //              Exceptions

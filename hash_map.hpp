@@ -37,6 +37,7 @@ namespace fefu
         }
     };
 
+
     template<typename ValueType>
     class hash_map_iterator {
     public:
@@ -46,20 +47,60 @@ namespace fefu
         using reference = ValueType&;
         using pointer = ValueType*;
 
-        hash_map_iterator() noexcept;
-        hash_map_iterator(const hash_map_iterator& other) noexcept;
+        hash_map_iterator() noexcept : mPtr(nullptr), iters(nullptr) {}
+        hash_map_iterator(const hash_map_iterator& other) noexcept : mPtr(other.mPtr), iters(other.iters) {}
 
-        reference operator*() const;
-        pointer operator->() const;
+        reference operator*() const {
+            return *mPtr;
+        }
+        pointer operator->() const {
+            return mPtr;
+        }
 
         // prefix ++
-        hash_map_iterator& operator++();
+        hash_map_iterator& operator++() {
+            if (mPtr == nullptr)
+                throw out_of_range("Iterator is out of range");
+            auto tmp = iters->upper_bound(mPtr);
+            if (tmp == iters->end()) {
+                mPtr = nullptr;
+            } else {
+                mPtr = *tmp;
+            }
+            return *this;
+        }
         // postfix ++
-        hash_map_iterator operator++(int);
+        hash_map_iterator operator++(int) {
+            hash_map_iterator tmp(*this);
+            operator++();
+            return tmp;
+        }
 
-        friend bool operator==(const hash_map_iterator<ValueType>&, const hash_map_iterator<ValueType>&);
-        friend bool operator!=(const hash_map_iterator<ValueType>&, const hash_map_iterator<ValueType>&);
+        friend bool operator==(const hash_map_iterator<ValueType>& lhs, const hash_map_iterator<ValueType>& rhs) {
+            return (lhs.mPtr == rhs.mPtr && lhs.iters == rhs.iters);
+        }
+        friend bool operator!=(const hash_map_iterator<ValueType>& lhs, const hash_map_iterator<ValueType>& rhs) {
+            return !(lhs.mPtr == rhs.mPtr);
+        }
+
+        template<typename R>
+        friend class hash_map_const_iterator;
+
+        template <typename R>
+        friend hash_map_iterator<R> createIterator(R* ptr, std::set<R*>& iters);
+
+    private:
+        pointer mPtr;
+        std::set<pointer>* iters;
     };
+
+    template <typename ValueType>
+    hash_map_iterator<ValueType> createIterator(ValueType* ptr, std::set<ValueType*>& iters) {
+        hash_map_iterator<ValueType> tmp;
+        tmp.mPtr = ptr;
+        tmp.iters = &iters;
+        return tmp;
+    }
 
     template<typename ValueType>
     class hash_map_const_iterator {
@@ -71,21 +112,59 @@ namespace fefu
         using reference = const ValueType&;
         using pointer = const ValueType*;
 
-        hash_map_const_iterator() noexcept;
-        hash_map_const_iterator(const hash_map_const_iterator& other) noexcept;
-        hash_map_const_iterator(const hash_map_iterator<ValueType>& other) noexcept;
+        hash_map_const_iterator() noexcept : mPtr(nullptr), iters(nullptr) {}
+        hash_map_const_iterator(const hash_map_const_iterator& other) noexcept : mPtr(other.mPtr), iters(other.iters) {}
+        hash_map_const_iterator(const hash_map_iterator<ValueType>& other) noexcept : mPtr(other.mPtr), iters((decltype(iters))other.iters) {}
 
-        reference operator*() const;
-        pointer operator->() const;
+        reference operator*() const {
+            return *mPtr;
+        }
+        pointer operator->() const {
+            return mPtr;
+        }
 
         // prefix ++
-        hash_map_const_iterator& operator++();
+        hash_map_const_iterator& operator++() {
+            if (mPtr == nullptr)
+                throw out_of_range("Iterator is out of range");
+            auto tmp = iters->upper_bound(mPtr);
+            if (tmp == iters->end()) {
+                mPtr = nullptr;
+            } else {
+                mPtr = *tmp;
+            }
+            return *this;
+        }
         // postfix ++
-        hash_map_const_iterator operator++(int);
+        hash_map_const_iterator operator++(int) {
+            hash_map_const_iterator tmp(*this);
+            operator++();
+            return tmp;
+        }
 
-        friend bool operator==(const hash_map_const_iterator<ValueType>&, const hash_map_const_iterator<ValueType>&);
-        friend bool operator!=(const hash_map_const_iterator<ValueType>&, const hash_map_const_iterator<ValueType>&);
+        friend bool operator==(const hash_map_const_iterator<ValueType>& lhs, const hash_map_const_iterator<ValueType>& rhs) {
+            return lhs.mPtr == rhs.mPtr;
+        }
+        friend bool operator!=(const hash_map_const_iterator<ValueType>& lhs, const hash_map_const_iterator<ValueType>& rhs) {
+            return lhs.mPtr != rhs.mPtr;
+        }
+
+        template <typename R>
+        friend hash_map_const_iterator<R> createConstIterator(R* ptr, const std::set<R*>& iters);
+
+    private:
+        pointer mPtr;
+        std::set<pointer>* iters;
     };
+
+    template <typename ValueType>
+    hash_map_const_iterator<ValueType> createConstIterator(ValueType* ptr, const std::set<ValueType*>& iters) {
+        hash_map_const_iterator<ValueType> tmp;
+        tmp.mPtr = ptr;
+        tmp.iters = (decltype(tmp.iters))&iters;
+        return tmp;
+    }
+
     template<typename K, typename T,
         typename Hash = std::hash<K>,
         typename Pred = std::equal_to<K>,
@@ -106,7 +185,7 @@ namespace fefu
         using size_type = std::size_t;
 
         /// Default constructor.
-        hash_map() = default;
+        hash_map() : mData(0), mIsSet(0) {}
 
         /**
          *  @brief  Default constructor creates no elements.
@@ -142,6 +221,7 @@ namespace fefu
             for (size_t i = 0; i < mIsSet.size(); i++) {
                 if (src.mIsSet[i] == 1) {
                     new(mData + i) value_type(src.mData[i]);
+                    mIters.insert(mData + i);
                 }
             }
         }
@@ -174,6 +254,7 @@ namespace fefu
                 if (umap.mIsSet[i] == 1) {
                     mIsSet[i] = 1;
                     new(mData + i) value_type(umap.mData[i]);
+                    mIters.insert(mData + i);
                 }
             }
         }
@@ -192,11 +273,9 @@ namespace fefu
             for (size_t i = 0; i < mIsSet.size(); i++) {
                 if (mIsSet[i] == 1) {
                     new(mData + i) value_type(umap.mData[i]);
+                    mIters.insert(mData + i);
                 }
             }
-
-            umap.mAlloc.deallocate(umap.mData, mIsSet.size());
-            umap.mData = nullptr;
         }
 
         /**
@@ -241,6 +320,7 @@ namespace fefu
         hash_map& operator=(std::initializer_list<value_type> l) {
             hash_map tmp(l);
             swap(tmp);
+            return *this;
         }
 
         ///  Returns the allocator object used by the %hash_map.
@@ -271,31 +351,49 @@ namespace fefu
          *  Returns a read/write iterator that points to the first element in the
          *  %hash_map.
          */
-        iterator begin() noexcept;
+        iterator begin() noexcept {
+            if (mIters.empty())
+                return createIterator<value_type>(nullptr, mIters);
+            return createIterator<value_type>(*mIters.begin(), mIters);
+        }
 
         //@{
         /**
          *  Returns a read-only (constant) iterator that points to the first
          *  element in the %hash_map.
          */
-        const_iterator begin() const noexcept;
+        const_iterator begin() const noexcept {
+            if (mIters.empty())
+                return createConstIterator<value_type>(nullptr, mIters);
+            return createConstIterator<value_type>(*mIters.begin(), mIters);
+        }
 
-        const_iterator cbegin() const noexcept;
+        const_iterator cbegin() const noexcept {
+            if (mIters.empty())
+                return createConstIterator<value_type>(nullptr, mIters);
+            return createConstIterator<value_type>(*mIters.begin(), mIters);
+        }
 
         /**
          *  Returns a read/write iterator that points one past the last element in
          *  the %hash_map.
          */
-        iterator end() noexcept;
+        iterator end() noexcept {
+            return createIterator<value_type>(nullptr, mIters);
+        }
 
         //@{
         /**
          *  Returns a read-only (constant) iterator that points one past the last
          *  element in the %hash_map.
          */
-        const_iterator end() const noexcept;
+        const_iterator end() const noexcept {
+            return createConstIterator<value_type>(nullptr, mIters);
+        }
 
-        const_iterator cend() const noexcept;
+        const_iterator cend() const noexcept {
+            return createConstIterator<value_type>(nullptr, mIters);
+        }
         //@}
 
         // modifiers.
@@ -480,7 +578,9 @@ namespace fefu
          *  elements themselves are pointers, the pointed-to memory is not touched
          *  in any way.  Managing the pointer is the user's responsibility.
          */
-        void clear() noexcept;
+        void clear() noexcept {
+            // manually call destructor???
+        }
 
         /**
          *  @brief  Swaps data with another %hash_map.
@@ -500,6 +600,7 @@ namespace fefu
             std::swap(this->mAlloc, x.mAlloc);
             std::swap(this->mKeyEqual, x.mKeyEqual);
             std::swap(this->mHash, x.mHash);
+            std::swap(this->mIters, x.mIters);
         }
 
         template<typename _H2, typename _P2>
@@ -583,6 +684,7 @@ namespace fefu
             size_type indx = innerFind(k);
             if (mIsSet[indx] != 1) {
                 new(mData + indx) value_type(k, mapped_type{});
+                mIters.insert(mData + indx);
                 mIsSet[indx] = 1;
                 mCount++;
             }
@@ -707,7 +809,6 @@ namespace fefu
             return true;
         }
 
-
     private:
         size_type mCount = 0;
         Alloc mAlloc;
@@ -716,6 +817,7 @@ namespace fefu
 
         std::vector<char> mIsSet;
         value_type* mData;
+        std::set<value_type*> mIters;
 
         float maxLoadFactor = 0.4;
 
