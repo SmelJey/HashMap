@@ -7,7 +7,6 @@
 
 namespace fefu
 {
-
     template<typename T>
     class allocator {
     public:
@@ -113,7 +112,7 @@ namespace fefu
          *  @brief  Default constructor creates no elements.
          *  @param n  Minimal initial number of buckets.
          */
-        explicit hash_map(size_type n);
+        explicit hash_map(size_type n) : mData(mAlloc.allocate(n)), mIsSet(n) {}
 
         /**
          *  @brief  Builds an %hash_map from a range.
@@ -127,19 +126,39 @@ namespace fefu
          */
         template<typename InputIterator>
         hash_map(InputIterator first, InputIterator last,
-            size_type n = 0);
+            size_type n = 0) : mData(mAlloc.allocate(n)), mIsSet(n) {
+
+            for (auto i = first; i != last; i++) {
+                (*this)[i->first] = i->second;
+            }
+        }
 
         /// Copy constructor.
-        hash_map(const hash_map&);
+        hash_map(const hash_map& src) : mIsSet(src.mIsSet), mAlloc(src.mAlloc),
+                                        maxLoadFactor(src.maxLoadFactor), mCount(src.mCount),
+                                        mHash(src.mHash), mKeyEqual(src.mKeyEqual) {
+            mData = mAlloc.allocate(src.mIsSet.size());
+
+            for (size_t i = 0; i < mIsSet.size(); i++) {
+                if (src.mIsSet[i] == 1) {
+                    new(mData + i) value_type(src.mData[i]);
+                }
+            }
+        }
 
         /// Move constructor.
-        hash_map(hash_map&&);
+        hash_map(hash_map&& rvalue) {
+            swap(std::move(rvalue));
+            rvalue.mData = nullptr;
+        }
 
         /**
          *  @brief Creates an %hash_map with no elements.
          *  @param a An allocator object.
          */
-        explicit hash_map(const allocator_type& a);
+        explicit hash_map(const allocator_type& a) : mAlloc(a) {
+            mData = mAlloc.allocate(0);
+        }
 
         /*
         *  @brief Copy constructor with allocator argument.
@@ -147,7 +166,17 @@ namespace fefu
         * @param  a  An allocator object.
         */
         hash_map(const hash_map& umap,
-            const allocator_type& a);
+            const allocator_type& a) : mAlloc(a), mIsSet(umap.mIsSet.size()) {
+
+            mData = mAlloc.allocate(umap.mIsSet.size());
+
+            for (size_t i = 0; i < mIsSet.size(); i++) {
+                if (umap.mIsSet[i] == 1) {
+                    mIsSet[i] = 1;
+                    new(mData + i) value_type(umap.mData[i]);
+                }
+            }
+        }
 
         /*
         *  @brief  Move constructor with allocator argument.
@@ -155,7 +184,20 @@ namespace fefu
         *  @param  a    An allocator object.
         */
         hash_map(hash_map&& umap,
-            const allocator_type& a);
+            const allocator_type& a) : mAlloc(a), mIsSet(std::move(umap.mIsSet)),
+                                    mHash(std::move(umap.mHash)), mKeyEqual(std::move(umap.mKeyEqual)),
+                                    mCount(std::move(umap.mCount)), maxLoadFactor(std::move(umap.maxLoadFactor)) {
+            mData = mAlloc.allocate(mIsSet.size());
+
+            for (size_t i = 0; i < mIsSet.size(); i++) {
+                if (mIsSet[i] == 1) {
+                    new(mData + i) value_type(umap.mData[i]);
+                }
+            }
+
+            umap.mAlloc.deallocate(umap.mData, mIsSet.size());
+            umap.mData = nullptr;
+        }
 
         /**
          *  @brief  Builds an %hash_map from an initializer_list.
@@ -166,13 +208,24 @@ namespace fefu
          *  list. This is linear in N (where N is @a l.size()).
          */
         hash_map(std::initializer_list<value_type> l,
-            size_type n = 0);
+            size_type n = 0) : hash_map(l.begin(), l.end(), n) {}
+
+        ~hash_map() {
+            mAlloc.deallocate(mData, mIsSet.size());
+        }
 
         /// Copy assignment operator.
-        hash_map& operator=(const hash_map&);
+        hash_map& operator=(const hash_map&src) {
+            hash_map tmp(src);
+            swap(tmp);
+            return *this;
+        }
 
         /// Move assignment operator.
-        hash_map& operator=(hash_map&&);
+        hash_map& operator=(hash_map&&src) {
+            swap(src);
+            return *this;
+        }
 
         /**
          *  @brief  %hash_map list assignment operator.
@@ -185,21 +238,32 @@ namespace fefu
          *  that the resulting %hash_map's size is the same as the number
          *  of elements assigned.
          */
-        hash_map& operator=(std::initializer_list<value_type> l);
+        hash_map& operator=(std::initializer_list<value_type> l) {
+            hash_map tmp(l);
+            swap(tmp);
+        }
 
         ///  Returns the allocator object used by the %hash_map.
-        allocator_type get_allocator() const noexcept;
+        allocator_type get_allocator() const noexcept {
+            return mAlloc;
+        }
 
         // size and capacity:
 
         ///  Returns true if the %hash_map is empty.
-        bool empty() const noexcept;
+        bool empty() const noexcept {
+            return (mCount == 0);
+        }
 
         ///  Returns the size of the %hash_map.
-        size_type size() const noexcept;
+        size_type size() const noexcept {
+            return mCount;
+        }
 
         ///  Returns the maximum size of the %hash_map.
-        size_type max_size() const noexcept;
+        size_type max_size() const noexcept {
+            return MAXSIZE_T;
+        }
 
         // iterators.
 
@@ -428,7 +492,15 @@ namespace fefu
          *  Note that the global std::swap() function is specialized such that
          *  std::swap(m1,m2) will feed to this function.
          */
-        void swap(hash_map& x);
+        void swap(hash_map& x) {
+            std::swap(this->mData, x.mData);
+            std::swap(this->mIsSet, x.mIsSet);
+            std::swap(this->mCount, x.mCount);
+            std::swap(this->maxLoadFactor, x.maxLoadFactor);
+            std::swap(this->mAlloc, x.mAlloc);
+            std::swap(this->mKeyEqual, x.mKeyEqual);
+            std::swap(this->mHash, x.mHash);
+        }
 
         template<typename _H2, typename _P2>
         void merge(hash_map<K, T, _H2, _P2, Alloc>& source);
@@ -440,11 +512,15 @@ namespace fefu
 
         ///  Returns the hash functor object with which the %hash_map was
         ///  constructed.
-        Hash hash_function() const;
+        Hash hash_function() const {
+            return mHash;
+        }
 
         ///  Returns the key comparison object with which the %hash_map was
         ///  constructed.
-        Pred key_eq() const;
+        Pred key_eq() const {
+            return mKeyEqual;
+        }
 
         // lookup.
 
@@ -474,14 +550,19 @@ namespace fefu
          *  %hash_map the result will either be 0 (not present) or 1
          *  (present).
          */
-        size_type count(const key_type& x) const;
+        size_type count(const key_type& x) const {
+            return contains(x);
+        }
 
         /**
          *  @brief  Finds whether an element with the given key exists.
          *  @param  x  Key of elements to be located.
          *  @return  True if there is any element with the specified key.
          */
-        bool contains(const key_type& x) const;
+        bool contains(const key_type& x) const {
+            size_type indx = innerFind(x);
+            return (mIsSet[indx] == 1);
+        }
 
         //@{
         /**
@@ -496,9 +577,22 @@ namespace fefu
          *
          *  Lookup requires constant time.
          */
-        mapped_type& operator[](const key_type& k);
+        mapped_type& operator[](const key_type& k) {
+            checkForRehash();
 
-        mapped_type& operator[](key_type&& k);
+            size_type indx = innerFind(k);
+            if (mIsSet[indx] != 1) {
+                new(mData + indx) value_type(k, mapped_type{});
+                mIsSet[indx] = 1;
+                mCount++;
+            }
+
+            return mData[indx].second;
+        }
+
+        mapped_type& operator[](key_type&& k) {
+            return (*this)[k];
+        }
         //@}
 
         //@{
@@ -509,37 +603,68 @@ namespace fefu
          *           such a data is present in the %hash_map.
          *  @throw  std::out_of_range  If no such data is present.
          */
-        mapped_type& at(const key_type& k);
+        mapped_type& at(const key_type& k) {
+            size_type indx = innerFind(k);
+            if (mIsSet[indx] != 1) {
+                throw std::out_of_range("This key is not presented in map");
+            }
 
-        const mapped_type& at(const key_type& k) const;
+            return mData[indx].second;
+        }
+
+        const mapped_type& at(const key_type& k) const {
+            size_type indx = innerFind(k);
+            if (mIsSet[indx] != 1) {
+                throw std::out_of_range("This key is not presented in map");
+            }
+
+            return mData[indx].second;
+        }
         //@}
 
         // bucket interface.
 
         /// Returns the number of buckets of the %hash_map.
-        size_type bucket_count() const noexcept;
+        size_type bucket_count() const noexcept {
+            return mIsSet.size();
+        }
 
         /*
         * @brief  Returns the bucket index of a given element.
         * @param  _K  A key instance.
         * @return  The key bucket index.
         */
-        size_type bucket(const key_type& _K) const;
+        size_type bucket(const key_type& _K) const {
+            size_type indx = innerFind(_K);
+            if (mIsSet[indx] != 1) {
+                throw std::out_of_range("This key is not presented in map");
+            }
+            return indx;
+        }
 
         // hash policy.
 
         /// Returns the average number of elements per bucket.
-        float load_factor() const noexcept;
+        float load_factor() const noexcept {
+            return mCount * 1.0 / mIsSet.size();
+        }
 
         /// Returns a positive number that the %hash_map tries to keep the
         /// load factor less than or equal to.
-        float max_load_factor() const noexcept;
+        float max_load_factor() const noexcept {
+            return maxLoadFactor;
+        }
 
         /**
          *  @brief  Change the %hash_map maximum load factor.
          *  @param  z The new maximum load factor.
          */
-        void max_load_factor(float z);
+        void max_load_factor(float z) {
+            if (z <= 0.0 || z >= 1)
+                throw invalid_argument("Load factor must be positive and less than 1");
+            maxLoadFactor = z;
+            checkForRehash();
+        }
 
         /**
          *  @brief  May rehash the %hash_map.
@@ -548,7 +673,15 @@ namespace fefu
          *  Rehash will occur only if the new number of buckets respect the
          *  %hash_map maximum load factor.
          */
-        void rehash(size_type n);
+        void rehash(size_type n) {
+            hash_map newHashMap(n);
+            for (size_type i = 0; i < mIsSet.size(); i++) {
+                if (mIsSet[i] == 1) {
+                    newHashMap[mData[i].first] = mData[i].second;
+                }
+            }
+            swap(newHashMap);
+        }
 
         /**
          *  @brief  Prepare the %hash_map for a specified number of
@@ -557,9 +690,59 @@ namespace fefu
          *
          *  Same as rehash(ceil(n / max_load_factor())).
          */
-        void reserve(size_type n);
+        void reserve(size_type n) {
+            rehash(ceil(n / maxLoadFactor));
+        }
 
-        bool operator==(const hash_map& other) const;
+        bool operator==(const hash_map& other) const {
+            if (this->size() != other.size())
+                return false;
+
+            for (size_type i = 0; i < mIsSet.size(); i++) {
+                if (mIsSet[i] == 1 && (!other.contains(mData[i].first)
+                                    || other.at(mData[i].first) != mData[i].second)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+
+    private:
+        size_type mCount = 0;
+        Alloc mAlloc;
+        hasher mHash;
+        key_equal mKeyEqual;
+
+        std::vector<char> mIsSet;
+        value_type* mData;
+
+        float maxLoadFactor = 0.4;
+
+        const size_t capacityGrowth = 6;
+        
+
+        size_type innerFind(const key_type& k) const {
+            size_type indx = mHash(k) % mIsSet.size();
+            size_type d = 1;
+            while (!mKeyEqual(mData[indx].first, k) && mIsSet[indx] == 1) {
+                indx = (indx + d) % mIsSet.size();
+            }
+
+            return indx;
+        }
+
+        bool checkForRehash() {
+            if (mIsSet.size() == 0) {
+                rehash(1);
+                return true;
+            }
+            if (load_factor() >= maxLoadFactor) {
+                rehash(mIsSet.size() * capacityGrowth);
+                return true;
+            }
+            return false;
+        }
     };
 
 } // namespace fefu
