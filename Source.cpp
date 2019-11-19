@@ -308,6 +308,8 @@ TEST_CASE("Non-const iterators", "[hash_map_iterator]") {
     hmap[3] = "c";
     hmap[6] = "d";
     fefu::hash_map_iterator<std::pair<const int, string>> it = hmap.begin();
+    auto tmp20 = *it;
+
     fefu::hash_map_const_iterator<std::pair<const int, string>> constIt(it);
     CHECK(*it == *constIt);
 
@@ -358,6 +360,165 @@ TEST_CASE("Const iterators", "[hash_map_iterator]") {
     CHECK_THROWS(++it);
 }
 
+TEST_CASE("erase", "[hash_map]") {
+    fefu::hash_map<int, string> hmap(10);
+    hmap[1] = "a";
+    hmap[2] = "b";
+    auto val = hmap.begin()->first;
+    hmap.erase(hmap.cbegin());
+    CHECK(hmap.size() == 1);
+    CHECK(!hmap.contains(val));
+
+    hmap[4] = "d";
+    size_t count = hmap.erase(4);
+    CHECK(count == 1);
+    CHECK(!hmap.contains(4));
+
+    count = hmap.erase(5);
+    CHECK(count == 0);
+    
+    for (int i = 0; i < 5; i++) {
+        hmap[i] = "test";
+    }
+
+    fefu::hash_map<int, string> hmapCopy(hmap);
+
+    auto it = hmap.erase(hmap.begin(), hmap.end());
+    REQUIRE(hmap.size() == 0);
+    CHECK(it == hmap.end());
+
+    hmapCopy.clear();
+    CHECK(hmap.size() == 0);
+}
+
+TEST_CASE("find", "[hash_map]") {
+    fefu::hash_map<int, string> hmap;
+    hmap[1] = "a";
+    hmap[2] = "b";
+    hmap[-1] = "c";
+
+    CHECK(hmap.find(3) == hmap.end());
+    CHECK(hmap.find(2)->second == "b");
+
+    const fefu::hash_map<int, string> constHmap(hmap);
+    CHECK(constHmap.find(3) == constHmap.end());
+    CHECK(constHmap.find(1)->second == "a");
+}
+
+TEST_CASE("insert", "[hash_map]") {
+    fefu::hash_map<int, string> hmap;
+    auto it = hmap.insert(make_pair(0, "abaca"));
+    CHECK(hmap.contains(0));
+    CHECK(hmap.at(0) == "abaca");
+    CHECK(it.first != hmap.end());
+    CHECK(it.second);
+
+    it = hmap.insert(make_pair(0, "cabada"));
+    CHECK(hmap.at(0) == "abaca");
+    CHECK(!it.second);
+
+    pair<const int, string> constPair(1, "test");
+    it = hmap.insert(constPair);
+    CHECK(hmap.contains(1));
+    CHECK(hmap.at(1) == "test");
+    CHECK(it.first != hmap.end());
+    CHECK(it.second);
+
+    pair<const int, string> constPair2(1, "null");
+    it = hmap.insert(constPair2);
+    CHECK(hmap.at(1) == "test");
+    CHECK(!it.second);
+}
+
+TEST_CASE("insert range", "[hash_map]") {
+    fefu::hash_map<int, string> hmap;
+    hmap.insert(make_pair(0, "abaca"));
+    hmap.insert(make_pair(1, "test"));
+    fefu::hash_map<int, string> hmap2(hmap);
+
+    vector<pair<int, string>> inputRange = { { 0, "test0" }, { 1, "test1" }, { 2, "test2"}, { 3, "test3" } };
+    hmap.insert(inputRange.begin(), inputRange.end());
+    CHECK(hmap.size() == 4);
+    CHECK(hmap.at(0) == "abaca");
+    CHECK(hmap.at(1) == "test");
+    CHECK(hmap.at(2) == "test2");
+    CHECK(hmap.at(3) == "test3");
+
+    hmap2.insert({ { 0, "test0" }, { 1, "test1" }, { 2, "test2"}, { 3, "test3" } });
+    CHECK(hmap2.size() == 4);
+    CHECK(hmap2.at(0) == "abaca");
+    CHECK(hmap2.at(1) == "test");
+    CHECK(hmap2.at(2) == "test2");
+    CHECK(hmap2.at(3) == "test3");
+}
+
+TEST_CASE("insert_or_assign", "[hash_map]") {
+    fefu::hash_map<int, string> hmap;
+    hmap.insert(make_pair(0, "abaca"));
+    hmap.insert(make_pair(1, "test"));
+
+    auto res = hmap.insert_or_assign(0, "testb");
+    CHECK(hmap.at(0) == "testb");
+    CHECK(!res.second);
+
+    res = hmap.insert_or_assign(2, "testc");
+    CHECK(hmap.at(2) == "testc");
+    CHECK(res.second);
+
+    const int a = 2;
+    res = hmap.insert_or_assign(a, "constTest");
+    CHECK(hmap.at(2) == "constTest");
+    CHECK(!res.second);
+}
+
+TEST_CASE("merge", "[hash_map]") {
+    fefu::hash_map<int, string> hmap1 = { { 0, "test0" },  {1, "test1" } };
+    fefu::hash_map<int, string> hmap2 = { { 0, "test0" }, { 2, "test2" } };
+    hmap1.merge(hmap2);
+    REQUIRE(hmap1.size() == 3);
+    REQUIRE(hmap2.size() == 1);
+
+    CHECK(hmap1.at(0) == "test0");
+    CHECK(hmap1.at(1) == "test1");
+    CHECK(hmap1.at(2) == "test2");
+
+    CHECK(hmap2.at(0) == "test0");
+
+    fefu::hash_map<int, string> hmap3 = { { 1, "test1" }, { 3, "test3" }, { 4, "test4" } };
+    hmap1.merge(std::move(hmap3));
+    REQUIRE(hmap1.size() == 5);
+    CHECK(hmap1.at(0) == "test0");
+    CHECK(hmap1.at(1) == "test1");
+    CHECK(hmap1.at(2) == "test2");
+    CHECK(hmap1.at(3) == "test3");
+    CHECK(hmap1.at(4) == "test4");
+}
+
+TEST_CASE("emplace", "hash_map") {
+    fefu::hash_map<int, vector<string>> hmap;
+    int k = 4;
+    auto res = hmap.try_emplace(k, "aba", "caba");
+    CHECK(res.second);
+    CHECK(hmap.size() == 1);
+    CHECK(hmap.at(4) == vector<string>({ "aba", "caba" }));
+
+    res = hmap.try_emplace(4, "cab");
+    CHECK(!res.second);
+    CHECK(hmap.size() == 1);
+    CHECK(hmap.at(4) == vector<string>({ "aba", "caba" }));
+
+    vector<string> vec = { "cab", "dab" };
+    res = hmap.emplace(4, vec);
+    CHECK(!res.second);
+    CHECK(hmap.size() == 1);
+    CHECK(hmap.at(4) == vector<string>({ "aba", "caba" }));
+
+    res = hmap.emplace(1, vec);
+    CHECK(res.second);
+    CHECK(hmap.size() == 2);
+    CHECK(hmap.at(1) == vec);
+}
+
 // ===========================================
 //              Exceptions
 // ===========================================
@@ -370,6 +531,14 @@ TEST_CASE("exceptions", "[hash_map]") {
     CHECK_THROWS(hmap.bucket(2));
     CHECK_THROWS(hmap.max_load_factor(1.2));
     CHECK_THROWS(hmap.max_load_factor(-0.4));
+
+    fefu::hash_map_iterator<pair<int, string>> iter;
+    fefu::hash_map_const_iterator<pair<int, string>> constIter;
+    CHECK_THROWS(*iter);
+    CHECK_THROWS(*constIter);
+
+    CHECK_THROWS(hmap.erase(hmap.cend()));
+    CHECK_THROWS(hmap.erase(hmap.begin(), hmap.end()));
 }
 
 

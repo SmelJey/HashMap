@@ -47,26 +47,25 @@ namespace fefu
         using reference = ValueType&;
         using pointer = ValueType*;
 
-        hash_map_iterator() noexcept : mPtr(nullptr), iters(nullptr) {}
-        hash_map_iterator(const hash_map_iterator& other) noexcept : mPtr(other.mPtr), iters(other.iters) {}
+        hash_map_iterator() noexcept : offset(0), data(nullptr), isSet(nullptr) {}
+        hash_map_iterator(const hash_map_iterator& other) noexcept : offset(other.offset), data(other.data), isSet(other.isSet) {}
 
         reference operator*() const {
-            return *mPtr;
+            if (data == nullptr)
+                throw out_of_range("Iterator is out of range");
+            return *(data + offset);
         }
         pointer operator->() const {
-            return mPtr;
+            return data + offset;
         }
 
         // prefix ++
         hash_map_iterator& operator++() {
-            if (mPtr == nullptr)
+            if (offset >= isSet->size())
                 throw out_of_range("Iterator is out of range");
-            auto tmp = iters->upper_bound(mPtr);
-            if (tmp == iters->end()) {
-                mPtr = nullptr;
-            } else {
-                mPtr = *tmp;
-            }
+            offset++;
+            while (offset < isSet->size() && (*isSet)[offset] != 1)
+                offset++;
             return *this;
         }
         // postfix ++
@@ -77,30 +76,31 @@ namespace fefu
         }
 
         friend bool operator==(const hash_map_iterator<ValueType>& lhs, const hash_map_iterator<ValueType>& rhs) {
-            return (lhs.mPtr == rhs.mPtr && lhs.iters == rhs.iters);
+            return (lhs.offset == rhs.offset && lhs.data == rhs.data);
         }
         friend bool operator!=(const hash_map_iterator<ValueType>& lhs, const hash_map_iterator<ValueType>& rhs) {
-            return !(lhs.mPtr == rhs.mPtr);
+            return !(lhs == rhs);
         }
+
+        template<typename A, typename B, typename C, typename D, typename E>
+        friend class hash_map;
 
         template<typename R>
         friend class hash_map_const_iterator;
 
-        template <typename R>
-        friend hash_map_iterator<R> createIterator(R* ptr, std::set<R*>& iters);
-
     private:
-        pointer mPtr;
-        std::set<pointer>* iters;
-    };
+        hash_map_iterator(pointer data, difference_type offset, const std::vector<char>* isSet) {
+            this->data = data;
+            this->isSet = (decltype(this->isSet))isSet;
+            this->offset = offset;
+            while (this->offset < isSet->size() && (*isSet)[this->offset] != 1)
+                this->offset++;
+        }
 
-    template <typename ValueType>
-    hash_map_iterator<ValueType> createIterator(ValueType* ptr, std::set<ValueType*>& iters) {
-        hash_map_iterator<ValueType> tmp;
-        tmp.mPtr = ptr;
-        tmp.iters = &iters;
-        return tmp;
-    }
+        difference_type offset;
+        pointer data;
+        std::vector<char>* isSet;
+    };
 
     template<typename ValueType>
     class hash_map_const_iterator {
@@ -112,27 +112,26 @@ namespace fefu
         using reference = const ValueType&;
         using pointer = const ValueType*;
 
-        hash_map_const_iterator() noexcept : mPtr(nullptr), iters(nullptr) {}
-        hash_map_const_iterator(const hash_map_const_iterator& other) noexcept : mPtr(other.mPtr), iters(other.iters) {}
-        hash_map_const_iterator(const hash_map_iterator<ValueType>& other) noexcept : mPtr(other.mPtr), iters((decltype(iters))other.iters) {}
+        hash_map_const_iterator() noexcept : offset(0), data(nullptr), isSet(nullptr) {}
+        hash_map_const_iterator(const hash_map_const_iterator& other) noexcept : offset(other.offset), data(other.data), isSet(other.isSet) {}
+        hash_map_const_iterator(const hash_map_iterator<ValueType>& other) noexcept : offset(other.offset), data(other.data), isSet(other.isSet) {}
 
         reference operator*() const {
-            return *mPtr;
+            if (data == nullptr || offset >= isSet->size())
+                throw out_of_range("Iterator is out of range");
+            return *(data + offset);
         }
         pointer operator->() const {
-            return mPtr;
+            return data + offset;
         }
 
         // prefix ++
         hash_map_const_iterator& operator++() {
-            if (mPtr == nullptr)
+            if (offset >= isSet->size())
                 throw out_of_range("Iterator is out of range");
-            auto tmp = iters->upper_bound(mPtr);
-            if (tmp == iters->end()) {
-                mPtr = nullptr;
-            } else {
-                mPtr = *tmp;
-            }
+            offset++;
+            while (offset < isSet->size() && (*isSet)[offset] != 1)
+                offset++;
             return *this;
         }
         // postfix ++
@@ -143,27 +142,28 @@ namespace fefu
         }
 
         friend bool operator==(const hash_map_const_iterator<ValueType>& lhs, const hash_map_const_iterator<ValueType>& rhs) {
-            return lhs.mPtr == rhs.mPtr;
+            return (lhs.offset == rhs.offset && lhs.data == rhs.data);
         }
         friend bool operator!=(const hash_map_const_iterator<ValueType>& lhs, const hash_map_const_iterator<ValueType>& rhs) {
-            return lhs.mPtr != rhs.mPtr;
+            return !(lhs == rhs);
         }
 
-        template <typename R>
-        friend hash_map_const_iterator<R> createConstIterator(R* ptr, const std::set<R*>& iters);
+        template<typename A, typename B, typename C, typename D, typename E>
+        friend class hash_map;
 
     private:
-        pointer mPtr;
-        std::set<pointer>* iters;
-    };
+        hash_map_const_iterator(pointer data, difference_type offset, const std::vector<char>* isSet) {
+            this->data = data;
+            this->isSet = (decltype(this->isSet))isSet;
+            this->offset = offset;
+            while (this->offset < isSet->size() && (*isSet)[this->offset] != 1)
+                this->offset++;
+        }
 
-    template <typename ValueType>
-    hash_map_const_iterator<ValueType> createConstIterator(ValueType* ptr, const std::set<ValueType*>& iters) {
-        hash_map_const_iterator<ValueType> tmp;
-        tmp.mPtr = ptr;
-        tmp.iters = (decltype(tmp.iters))&iters;
-        return tmp;
-    }
+        difference_type offset;
+        pointer data;
+        std::vector<char>* isSet;
+    };
 
     template<typename K, typename T,
         typename Hash = std::hash<K>,
@@ -191,7 +191,7 @@ namespace fefu
          *  @brief  Default constructor creates no elements.
          *  @param n  Minimal initial number of buckets.
          */
-        explicit hash_map(size_type n) : mData(mAlloc.allocate(n)), mIsSet(n) {}
+        explicit hash_map(size_type n) : mData(mAlloc.allocate(n + (n % 2))), mIsSet(n + (n % 2)) {}
 
         /**
          *  @brief  Builds an %hash_map from a range.
@@ -205,7 +205,7 @@ namespace fefu
          */
         template<typename InputIterator>
         hash_map(InputIterator first, InputIterator last,
-            size_type n = 0) : mData(mAlloc.allocate(n)), mIsSet(n) {
+            size_type n = 0) : mData(mAlloc.allocate(n + (n % 2))), mIsSet(n + (n % 2)) {
 
             for (auto i = first; i != last; i++) {
                 (*this)[i->first] = i->second;
@@ -221,7 +221,6 @@ namespace fefu
             for (size_t i = 0; i < mIsSet.size(); i++) {
                 if (src.mIsSet[i] == 1) {
                     new(mData + i) value_type(src.mData[i]);
-                    mIters.insert(mData + i);
                 }
             }
         }
@@ -254,7 +253,6 @@ namespace fefu
                 if (umap.mIsSet[i] == 1) {
                     mIsSet[i] = 1;
                     new(mData + i) value_type(umap.mData[i]);
-                    mIters.insert(mData + i);
                 }
             }
         }
@@ -273,7 +271,6 @@ namespace fefu
             for (size_t i = 0; i < mIsSet.size(); i++) {
                 if (mIsSet[i] == 1) {
                     new(mData + i) value_type(umap.mData[i]);
-                    mIters.insert(mData + i);
                 }
             }
         }
@@ -352,9 +349,7 @@ namespace fefu
          *  %hash_map.
          */
         iterator begin() noexcept {
-            if (mIters.empty())
-                return createIterator<value_type>(nullptr, mIters);
-            return createIterator<value_type>(*mIters.begin(), mIters);
+            return hash_map_iterator<value_type>(mData, 0, &mIsSet);
         }
 
         //@{
@@ -363,15 +358,11 @@ namespace fefu
          *  element in the %hash_map.
          */
         const_iterator begin() const noexcept {
-            if (mIters.empty())
-                return createConstIterator<value_type>(nullptr, mIters);
-            return createConstIterator<value_type>(*mIters.begin(), mIters);
+            return hash_map_const_iterator<value_type>(mData, 0, &mIsSet);
         }
 
         const_iterator cbegin() const noexcept {
-            if (mIters.empty())
-                return createConstIterator<value_type>(nullptr, mIters);
-            return createConstIterator<value_type>(*mIters.begin(), mIters);
+            return hash_map_const_iterator<value_type>(mData, 0, &mIsSet);
         }
 
         /**
@@ -379,7 +370,7 @@ namespace fefu
          *  the %hash_map.
          */
         iterator end() noexcept {
-            return createIterator<value_type>(nullptr, mIters);
+            return hash_map_iterator<value_type>(mData, mIsSet.size(), &mIsSet);
         }
 
         //@{
@@ -388,11 +379,11 @@ namespace fefu
          *  element in the %hash_map.
          */
         const_iterator end() const noexcept {
-            return createConstIterator<value_type>(nullptr, mIters);
+            return hash_map_const_iterator<value_type>(mData, mIsSet.size(), &mIsSet);
         }
 
         const_iterator cend() const noexcept {
-            return createConstIterator<value_type>(nullptr, mIters);
+            return hash_map_const_iterator<value_type>(mData, mIsSet.size(), &mIsSet);
         }
         //@}
 
@@ -419,7 +410,9 @@ namespace fefu
         *  Insertion requires amortized constant time.
         */
         template<typename... _Args>
-        std::pair<iterator, bool> emplace(_Args&&... args);
+        std::pair<iterator, bool> emplace(_Args&&... args) {
+            return insert(value_type(std::forward<_Args>(args)...));
+        }
 
         /**
          *  @brief Attempts to build and insert a std::pair into the
@@ -444,11 +437,15 @@ namespace fefu
          *  Insertion requires amortized constant time.
          */
         template <typename... _Args>
-        std::pair<iterator, bool> try_emplace(const key_type& k, _Args&&... args);
+        std::pair<iterator, bool> try_emplace(const key_type& k, _Args&&... args) {
+            return insert(value_type{ k, mapped_type{ std::forward<_Args&&>(args)... } });
+        }
 
         // move-capable overload
         template <typename... _Args>
-        std::pair<iterator, bool> try_emplace(key_type&& k, _Args&&... args);
+        std::pair<iterator, bool> try_emplace(key_type&& k, _Args&&... args) {
+            return insert(value_type{ std::forward<key_type>(k), mapped_type{ std::forward<_Args&&>(args)... } });
+        }
 
         //@{
         /**
@@ -467,9 +464,21 @@ namespace fefu
         *
         *  Insertion requires amortized constant time.
         */
-        std::pair<iterator, bool> insert(const value_type& x);
+        std::pair<iterator, bool> insert(const value_type& x) {
+            iterator it = find(x.first);
+            if (it != end())
+                return std::make_pair(it, false);
+            (*this)[x.first] = x.second;
+            return std::make_pair(find(x.first), true);
+        }
 
-        std::pair<iterator, bool> insert(value_type&& x);
+        std::pair<iterator, bool> insert(value_type&& x) {
+            iterator it = find(x.first);
+            if (it != end())
+                return std::make_pair(it, false);
+            (*this)[x.first] = x.second;
+            return std::make_pair(find(x.first), true);
+        }
 
         //@}
 
@@ -483,7 +492,11 @@ namespace fefu
          *  Complexity similar to that of the range constructor.
          */
         template<typename _InputIterator>
-        void insert(_InputIterator first, _InputIterator last);
+        void insert(_InputIterator first, _InputIterator last) {
+            for (auto it = first; it != last; it++) {
+                insert(*it);
+            }
+        }
 
         /**
          *  @brief Attempts to insert a list of elements into the %hash_map.
@@ -492,7 +505,9 @@ namespace fefu
          *
          *  Complexity similar to that of the range constructor.
          */
-        void insert(std::initializer_list<value_type> l);
+        void insert(std::initializer_list<value_type> l) {
+            insert(l.begin(), l.end());
+        }
 
 
         /**
@@ -516,11 +531,19 @@ namespace fefu
          *  Insertion requires amortized constant time.
          */
         template <typename _Obj>
-        std::pair<iterator, bool> insert_or_assign(const key_type& k, _Obj&& obj);
+        std::pair<iterator, bool> insert_or_assign(const key_type& k, _Obj&& obj) {
+            bool flag = !contains(k);
+            (*this)[k] = std::forward<_Obj>(obj);
+            return make_pair(find(k), flag);
+        }
 
         // move-capable overload
         template <typename _Obj>
-        std::pair<iterator, bool> insert_or_assign(key_type&& k, _Obj&& obj);
+        std::pair<iterator, bool> insert_or_assign(key_type&& k, _Obj&& obj) {
+            bool flag = !contains(k);
+            (*this)[k] = std::forward<_Obj>(obj);
+            return make_pair(find(k), flag);
+        }
 
         //@{
         /**
@@ -536,10 +559,21 @@ namespace fefu
          *  element is itself a pointer, the pointed-to memory is not touched in
          *  any way.  Managing the pointer is the user's responsibility.
          */
-        iterator erase(const_iterator position);
+        iterator erase(const_iterator position) {
+            if (position == this->cend())
+                throw out_of_range("Cant erase end iterator");
+            (position.data + position.offset)->~value_type();
+            (*position.isSet)[position.offset] = 2;
+            position++;
+            mCount--;
+
+            return iterator((decltype(iterator::data))position.data, position.offset, position.isSet);
+        }
 
         // LWG 2059.
-        iterator erase(iterator position);
+        iterator erase(iterator position) {
+            return erase(const_iterator(position));
+        }
         //@}
 
         /**
@@ -554,7 +588,13 @@ namespace fefu
          *  element is itself a pointer, the pointed-to memory is not touched in
          *  any way.  Managing the pointer is the user's responsibility.
          */
-        size_type erase(const key_type& x);
+        size_type erase(const key_type& x) {
+            auto it = find(x);
+            if (it == cend())
+                return 0;
+            erase(it);
+            return 1;
+        }
 
         /**
          *  @brief Erases a [first,last) range of elements from an
@@ -570,7 +610,14 @@ namespace fefu
          *  the element is itself a pointer, the pointed-to memory is not touched
          *  in any way.  Managing the pointer is the user's responsibility.
          */
-        iterator erase(const_iterator first, const_iterator last);
+        iterator erase(const_iterator first, const_iterator last) {
+            if (first == this->cend())
+                throw out_of_range("Cant erase end iterator");
+            for (auto it = first; it != last; ++it) {
+                erase(it);
+            }
+            return iterator((decltype(iterator::data))last.data, last.offset, last.isSet);
+        }
 
         /**
          *  Erases all elements in an %hash_map.
@@ -579,7 +626,7 @@ namespace fefu
          *  in any way.  Managing the pointer is the user's responsibility.
          */
         void clear() noexcept {
-            // manually call destructor???
+            erase(this->begin(), this->end());
         }
 
         /**
@@ -600,14 +647,27 @@ namespace fefu
             std::swap(this->mAlloc, x.mAlloc);
             std::swap(this->mKeyEqual, x.mKeyEqual);
             std::swap(this->mHash, x.mHash);
-            std::swap(this->mIters, x.mIters);
         }
 
         template<typename _H2, typename _P2>
-        void merge(hash_map<K, T, _H2, _P2, Alloc>& source);
+        void merge(hash_map<K, T, _H2, _P2, Alloc>& source) {
+            for (auto it = source.begin(); it != source.end(); it++) {
+                if (!contains(it->first)) {
+                    insert(std::move(*it));
+                    source.erase(it);
+                }
+            }
+        }
 
         template<typename _H2, typename _P2>
-        void merge(hash_map<K, T, _H2, _P2, Alloc>&& source);
+        void merge(hash_map<K, T, _H2, _P2, Alloc>&& source) {
+            for (auto it = source.begin(); it != source.end(); it++) {
+                if (!contains(it->first)) {
+                    insert(std::move(*it));
+                    source.erase(it);
+                }
+            }
+        }
 
         // observers.
 
@@ -637,9 +697,23 @@ namespace fefu
          *  pointing to the sought after element.  If unsuccessful it returns the
          *  past-the-end ( @c end() ) iterator.
          */
-        iterator find(const key_type& x);
+        iterator find(const key_type& x) {
+            if (mCount == 0)
+                return end();
+            size_type indx = innerFind(x);
+            if (mIsSet[indx] == 1) {
+                return iterator(mData, indx, &mIsSet);
+            }
+            return end();
+        }
 
-        const_iterator find(const key_type& x) const;
+        const_iterator find(const key_type& x) const {
+            size_type indx = innerFind(x);
+            if (mIsSet[indx] == 1) {
+                return iterator(mData, indx, &mIsSet);
+            }
+            return end();
+        }
         //@}
 
         /**
@@ -683,8 +757,8 @@ namespace fefu
 
             size_type indx = innerFind(k);
             if (mIsSet[indx] != 1) {
+                indx = innerFind(k, false);
                 new(mData + indx) value_type(k, mapped_type{});
-                mIters.insert(mData + indx);
                 mIsSet[indx] = 1;
                 mCount++;
             }
@@ -776,10 +850,12 @@ namespace fefu
          *  %hash_map maximum load factor.
          */
         void rehash(size_type n) {
+            if (n % 2)
+                n++;
             hash_map newHashMap(n);
             for (size_type i = 0; i < mIsSet.size(); i++) {
                 if (mIsSet[i] == 1) {
-                    newHashMap[mData[i].first] = mData[i].second;
+                    newHashMap[mData[i].first] = std::move(mData[i].second);
                 }
             }
             swap(newHashMap);
@@ -813,21 +889,23 @@ namespace fefu
         size_type mCount = 0;
         Alloc mAlloc;
         hasher mHash;
+        
         key_equal mKeyEqual;
 
         std::vector<char> mIsSet;
         value_type* mData;
-        std::set<value_type*> mIters;
 
         float maxLoadFactor = 0.4;
 
         const size_t capacityGrowth = 6;
-        
+        hasher innerHash;
 
-        size_type innerFind(const key_type& k) const {
+        size_type innerFind(const key_type& k, bool forFind = true;) const {
             size_type indx = mHash(k) % mIsSet.size();
-            size_type d = 1;
-            while (!mKeyEqual(mData[indx].first, k) && mIsSet[indx] == 1) {
+            uint64_t d = (innerHash(k) + 1) % mIsSet.size();
+            while (d % 2 == 0)
+                d = (d + 1) % mIsSet.size();
+            while (!mKeyEqual(mData[indx].first, k) && (mIsSet[indx] == 1 || (mIsSet[indx] == 2 && forFind))) {
                 indx = (indx + d) % mIsSet.size();
             }
 
