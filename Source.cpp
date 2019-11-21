@@ -6,6 +6,7 @@
 #include <vector>
 #include <iostream>
 #include <time.h>
+#include <unordered_map>
 
 
 using namespace std;
@@ -54,17 +55,14 @@ TEST_CASE("at()", "[hash_map]") {
 
 TEST_CASE("bucket_count()", "[hash_map]") {
     fefu::hash_map<int, string> hmap(10);
-    CHECK(hmap.bucket_count() == 10);
+    CHECK(hmap.bucket_count() == 16);
 }
 
 TEST_CASE("bucket()", "[hash_map]") {
     fefu::hash_map<int, string> hmap(10);
     hmap[4] = "abc";
-    size_t t = hash<int>{}(4) % 10;
+    size_t t = hash<int>{}(4) % 16;
     CHECK(t == hmap.bucket(4));
-    hmap[-1] = "d";
-    t = hash<int>{}(-1) % 10;
-    CHECK(t == hmap.bucket(-1));
 }
 
 TEST_CASE("rehash()", "[hash_map]") {
@@ -73,7 +71,7 @@ TEST_CASE("rehash()", "[hash_map]") {
     hmap[-1] = "a";
     hmap[2] = "bc";
     hmap.rehash(100);
-    REQUIRE(hmap.bucket_count() == 100);
+    REQUIRE(hmap.bucket_count() == 128);
     CHECK(hmap[4] == "abc");
     CHECK(hmap[-1] == "a");
     CHECK(hmap[2] == "bc");
@@ -83,11 +81,11 @@ TEST_CASE("reserve()", "[hash_map]") {
     fefu::hash_map<int, string> hmap(6);
     hmap[1] = "test";
     hmap.reserve(12);
-    CHECK(hmap.bucket_count() == 30);
+    CHECK(hmap.bucket_count() == 32);
     CHECK(hmap[1] == "test");
     hmap[-1] = "test2";
     hmap.reserve(4);
-    CHECK(hmap.bucket_count() == 10);
+    CHECK(hmap.bucket_count() == 16);
     CHECK(hmap[1] == "test");
     CHECK(hmap[-1] == "test2");
 }
@@ -96,7 +94,7 @@ TEST_CASE("load_factor", "[hash_map]") {
     fefu::hash_map<int, string> hmap(10);
     CHECK(hmap.load_factor() == 0.0);
     hmap[4] = "ab";
-    CHECK(abs(hmap.load_factor() - 0.1) < eps);
+    CHECK(abs(hmap.load_factor() - 0.0625) < eps);
     CHECK(abs(hmap.max_load_factor() - 0.4) < eps);
     hmap.max_load_factor(0.6);
     CHECK(abs(hmap.max_load_factor() - 0.6) < eps);
@@ -203,42 +201,48 @@ TEST_CASE("InputIterator constructor", "[hash_map]") {
 
 TEST_CASE("allocator constructor, get_allocator()", "[hash_map]") {
     fefu::allocator<pair<const int, string>> t;
+    t.debug_type = 2;
     fefu::hash_map<int, string> hmap(t);
     auto alloc = hmap.get_allocator();
 
     CHECK(typeid(t).name() == typeid(alloc).name());
+    CHECK(t.debug_type == 2);
 }
 
 TEST_CASE("Move constructor", "[hash_map]") {
     fefu::allocator<pair<const int, string>> t;
+    t.debug_type = 3;
 
     fefu::hash_map<int, string> hmap1(10);
     hmap1[4] = "abc";
     fefu::hash_map<int, string> hmap2(std::move(hmap1));
 
-    CHECK(hmap2.bucket_count() == 10);
+    CHECK(hmap2.bucket_count() == 16);
     CHECK(hmap2[4] == "abc");
 
     fefu::hash_map<int, string> hmap3(10);
     hmap3[4] = "abc";
     fefu::hash_map<int, string> hmap4(std::move(hmap3), t);
-    CHECK(hmap4.bucket_count() == 10);
-    /*CHECK(hmap4[4] == "abc");*/
+    CHECK(hmap4.bucket_count() == 16);
+    CHECK(hmap4.get_allocator().debug_type == 3);
+    CHECK(hmap4[4] == "abc");
 }
 
 TEST_CASE("Copy constructor", "[hash_map]") {
     fefu::allocator<pair<const int, string>> t;
+    t.debug_type = 5;
 
     fefu::hash_map<int, string> hmap1(10);
     hmap1[4] = "abc";
     fefu::hash_map<int, string> hmap2(hmap1);
 
-    CHECK(hmap2.bucket_count() == 10);
+    CHECK(hmap2.bucket_count() == 16);
     CHECK(hmap2[4] == "abc");
 
     fefu::hash_map<int, string> hmap3(hmap1, t);
-    CHECK(hmap3.bucket_count() == 10);
+    CHECK(hmap3.bucket_count() == 16);
     CHECK(hmap3[4] == "abc");
+    CHECK(t.debug_type == 5);
 }
 
 TEST_CASE("Init list constructor", "[hash_map]") {
@@ -294,7 +298,7 @@ TEST_CASE("Size", "[hash_map]") {
 
     CHECK(!hmap.empty());
     CHECK(hmap.size() == 3);
-    CHECK(hmap.max_size() == MAXSIZE_T);
+    CHECK(hmap.max_size() == SIZE_MAX);
 }
 
 
@@ -308,7 +312,7 @@ TEST_CASE("Non-const iterators", "[hash_map_iterator]") {
     hmap[3] = "c";
     hmap[6] = "d";
     fefu::hash_map_iterator<std::pair<const int, string>> it = hmap.begin();
-    auto tmp20 = *it;
+    auto itBegin = *it;
 
     fefu::hash_map_const_iterator<std::pair<const int, string>> constIt(it);
     CHECK(*it == *constIt);
@@ -497,26 +501,43 @@ TEST_CASE("merge", "[hash_map]") {
 TEST_CASE("emplace", "hash_map") {
     fefu::hash_map<int, vector<string>> hmap;
     int k = 4;
-    auto res = hmap.try_emplace(k, "aba", "caba");
+    auto res = hmap.try_emplace(k, 2, "aba");
     CHECK(res.second);
     CHECK(hmap.size() == 1);
-    CHECK(hmap.at(4) == vector<string>({ "aba", "caba" }));
+    CHECK(hmap.at(4) == vector<string>({ "aba", "aba" }));
 
-    res = hmap.try_emplace(4, "cab");
+    res = hmap.try_emplace(4, 1, "cab");
     CHECK(!res.second);
     CHECK(hmap.size() == 1);
-    CHECK(hmap.at(4) == vector<string>({ "aba", "caba" }));
+    CHECK(hmap.at(4) == vector<string>({ "aba", "aba" }));
 
     vector<string> vec = { "cab", "dab" };
     res = hmap.emplace(4, vec);
     CHECK(!res.second);
     CHECK(hmap.size() == 1);
-    CHECK(hmap.at(4) == vector<string>({ "aba", "caba" }));
+    CHECK(hmap.at(4) == vector<string>({ "aba", "aba" }));
 
     res = hmap.emplace(1, vec);
     CHECK(res.second);
     CHECK(hmap.size() == 2);
     CHECK(hmap.at(1) == vec);
+}
+
+TEST_CASE("erase_if", "[hash_map]") {
+    fefu::hash_map<int, string> hmap = { pair<int, string>(1, "aba"),
+                                        pair<int, string>(2, "caba"),
+                                        pair<int, string>(3, "caba"),
+                                        pair<int, string>(4, "aba"),
+                                        pair<int, string>(5, "aba"),
+                                        pair<int, string>(6, "test") };
+
+    hmap.erase_if([](pair<const int, string>& tmp) {
+        return tmp.second == "aba";
+    });
+    CHECK(hmap.size() == 3);
+    CHECK(!hmap.contains(1));
+    CHECK(!hmap.contains(4));
+    CHECK(!hmap.contains(5));
 }
 
 // ===========================================
@@ -538,10 +559,9 @@ TEST_CASE("exceptions", "[hash_map]") {
     CHECK_THROWS(*constIter);
 
     CHECK_THROWS(hmap.erase(hmap.cend()));
-    CHECK_THROWS(hmap.erase(hmap.begin(), hmap.end()));
 }
 
-
+#define BENCHMARK
 #ifdef BENCHMARK
 
 // ===========================================
@@ -549,35 +569,209 @@ TEST_CASE("exceptions", "[hash_map]") {
 // ===========================================
 
 void benchmark_t1(size_t rounds) {
-    fefu::hash_map<int, string> hmap(10);
+    printf("BENCHMARK: rounds: %d\n", rounds);
+
+    // =============================
+    //         operator[]
+    // =============================
+    fefu::hash_map<int, int> hmap(10);
     clock_t start = clock();
 
     for (size_t i = 0; i < rounds; i++) {
-        hmap[i] = "test";
+        hmap[i] = i;
     }
     CHECK(hmap.bucket_count() >= rounds);
     CHECK(hmap.size() == rounds);
 
     double time = ((double)clock() - start) / CLOCKS_PER_SEC;
 
-    printf("BENCHMARK: operator[]\n");
-    printf(" - rounds: %d\n", rounds);
-    printf(" - time taken: %.2fs\n", time);
+    printf(" - operator[]: time taken: %.2fs\n", time);
+
+    // =============================
+    //         iterators
+    // =============================
+    start = clock();
+
+    for (auto i = hmap.begin(); i != hmap.end(); i++) {
+        i->first;
+    }
+    CHECK(hmap.bucket_count() >= rounds);
+    CHECK(hmap.size() == rounds);
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+
+    printf(" - iterate through: time taken: %.2fs\n", time);
+
+    // =============================
+    //         insert
+    // =============================
+    fefu::hash_map<int, float>  hmap2;
+    start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap2.insert(make_pair(i, i));
+    }
+    CHECK(hmap2.bucket_count() >= rounds);
+    CHECK(hmap2.size() == rounds);
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+    printf(" - insert: time taken: %.2fs\n", time);
+
+    // =============================
+    //         erase
+    // =============================
+    start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap2.erase(i);
+    }
+
+    CHECK(hmap2.size() == 0);
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+    printf(" - erase: time taken: %.2fs\n", time);
+
+    // =============================
+    //         emplace
+    // =============================
+    fefu::hash_map<int, int>  hmap3;
+    start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap3.emplace(i + rounds / 2, i);
+    }
+    CHECK(hmap3.bucket_count() >= rounds);
+    CHECK(hmap3.size() == rounds);
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+    printf(" - emplace: time taken: %.2fs\n", time);
+
+    // =============================
+    //         find
+    // =============================
+    start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap.find(rand());
+    }
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+    printf(" - find: time taken: %.2fs\n", time);
+
+    printf("\n");
 }
+
+void benchmark_t2(size_t rounds) {
+    printf("BENCHMARK STD UNORDERED MAP: rounds: %d\n", rounds);
+
+    // =============================
+    //         operator[]
+    // =============================
+    unordered_map<int, int> hmap(10);
+    clock_t start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap[i] = i;
+    }
+    CHECK(hmap.bucket_count() >= rounds);
+    CHECK(hmap.size() == rounds);
+
+    double time = ((double)clock() - start) / CLOCKS_PER_SEC;
+
+    printf(" - operator[]: time taken: %.2fs\n", time);
+
+    // =============================
+    //         iterators
+    // =============================
+    start = clock();
+
+    for (auto i = hmap.begin(); i != hmap.end(); i++) {
+        i->first;
+    }
+    CHECK(hmap.bucket_count() >= rounds);
+    CHECK(hmap.size() == rounds);
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+
+    printf(" - iterate through: time taken: %.2fs\n", time);
+
+    // =============================
+    //         insert
+    // =============================
+    unordered_map<int, float>  hmap2;
+    start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap2.insert(make_pair(i, i));
+    }
+    CHECK(hmap2.bucket_count() >= rounds);
+    CHECK(hmap2.size() == rounds);
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+    printf(" - insert: time taken: %.2fs\n", time);
+
+    // =============================
+    //         erase
+    // =============================
+    start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap2.erase(i);
+    }
+
+    CHECK(hmap2.size() == 0);
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+    printf(" - erase: time taken: %.2fs\n", time);
+
+    // =============================
+    //         emplace
+    // =============================
+    unordered_map<int, int>  hmap3;
+    start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap3.emplace(i + rounds / 2, i);
+    }
+    CHECK(hmap3.bucket_count() >= rounds);
+    CHECK(hmap3.size() == rounds);
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+    printf(" - emplace: time taken: %.2fs\n", time);
+
+    // =============================
+    //         find
+    // =============================
+    start = clock();
+
+    for (size_t i = 0; i < rounds; i++) {
+        hmap.find(rand());
+    }
+
+    time = ((double)clock() - start) / CLOCKS_PER_SEC;
+    printf(" - find: time taken: %.2fs\n", time);
+
+    printf("\n");
+}
+
+
 
 TEST_CASE("BENCHMARK1", "[Benchmark]") {
     size_t rounds = 10000;
     benchmark_t1(rounds);
+    benchmark_t2(rounds);
 }
 
 TEST_CASE("BENCHMARK2", "[Benchmark]") {
     size_t rounds = 100000;
     benchmark_t1(rounds);
+    benchmark_t2(rounds);
 }
 
 TEST_CASE("BENCHMARK3", "[Benchmark]") {
     size_t rounds = 1000000;
     benchmark_t1(rounds);
+    benchmark_t2(rounds);
 }
 
 #endif // BENCHMARK

@@ -3,10 +3,22 @@
 #include <functional>
 #include <memory>
 #include <utility>
+#include <vector>
 #include <type_traits>
+#include <algorithm>
+#include <exception>
+#include <climits>
 
 namespace fefu
 {
+    /*template <typename ValueType>
+    struct iterNode {
+        iterNode(ValueType* pointer, char isSet) : ptr(pointer), state() {}
+        ValueType* ptr;
+        char state;
+    };*/
+
+
     template<typename T>
     class allocator {
     public:
@@ -20,10 +32,10 @@ namespace fefu
 
         allocator() noexcept {}
 
-        allocator(const allocator&) noexcept {}
+        allocator(const allocator& src) noexcept : debug_type(src.debug_type) {}
 
         template <class U>
-        allocator(const allocator<U>&) noexcept {}
+        allocator(const allocator<U>& src) noexcept : debug_type(src.debug_type) {}
 
         ~allocator() {}
 
@@ -35,6 +47,8 @@ namespace fefu
         void deallocate(pointer p, size_type n) noexcept {
             ::operator delete(static_cast<void*>(p), n * sizeof(value_type));
         }
+
+        int debug_type = 0;
     };
 
 
@@ -52,7 +66,7 @@ namespace fefu
 
         reference operator*() const {
             if (data == nullptr)
-                throw out_of_range("Iterator is out of range");
+                throw std::out_of_range("Iterator is out of range");
             return *(data + offset);
         }
         pointer operator->() const {
@@ -61,10 +75,10 @@ namespace fefu
 
         // prefix ++
         hash_map_iterator& operator++() {
-            if (offset >= isSet->size())
-                throw out_of_range("Iterator is out of range");
+            if ((size_t)offset >= isSet->size())
+                throw std::out_of_range("Iterator is out of range");
             offset++;
-            while (offset < isSet->size() && (*isSet)[offset] != 1)
+            while ((size_t)offset < isSet->size() && (*isSet)[offset] != 1)
                 offset++;
             return *this;
         }
@@ -93,7 +107,7 @@ namespace fefu
             this->data = data;
             this->isSet = (decltype(this->isSet))isSet;
             this->offset = offset;
-            while (this->offset < isSet->size() && (*isSet)[this->offset] != 1)
+            while ((size_t)this->offset < isSet->size() && (*isSet)[this->offset] != 1)
                 this->offset++;
         }
 
@@ -117,8 +131,8 @@ namespace fefu
         hash_map_const_iterator(const hash_map_iterator<ValueType>& other) noexcept : offset(other.offset), data(other.data), isSet(other.isSet) {}
 
         reference operator*() const {
-            if (data == nullptr || offset >= isSet->size())
-                throw out_of_range("Iterator is out of range");
+            if (data == nullptr || (size_t)offset >= isSet->size())
+                throw std::out_of_range("Iterator is out of range");
             return *(data + offset);
         }
         pointer operator->() const {
@@ -127,10 +141,10 @@ namespace fefu
 
         // prefix ++
         hash_map_const_iterator& operator++() {
-            if (offset >= isSet->size())
-                throw out_of_range("Iterator is out of range");
+            if ((size_t)offset >= isSet->size())
+                throw std::out_of_range("Iterator is out of range");
             offset++;
-            while (offset < isSet->size() && (*isSet)[offset] != 1)
+            while ((size_t)offset < isSet->size() && (*isSet)[offset] != 1)
                 offset++;
             return *this;
         }
@@ -156,7 +170,7 @@ namespace fefu
             this->data = data;
             this->isSet = (decltype(this->isSet))isSet;
             this->offset = offset;
-            while (this->offset < isSet->size() && (*isSet)[this->offset] != 1)
+            while ((size_t)this->offset < isSet->size() && (*isSet)[this->offset] != 1)
                 this->offset++;
         }
 
@@ -169,7 +183,7 @@ namespace fefu
         typename Hash = std::hash<K>,
         typename Pred = std::equal_to<K>,
         typename Alloc = allocator<std::pair<const K, T>>>
-        class hash_map
+    class hash_map
     {
     public:
         using key_type = K;
@@ -191,7 +205,7 @@ namespace fefu
          *  @brief  Default constructor creates no elements.
          *  @param n  Minimal initial number of buckets.
          */
-        explicit hash_map(size_type n) : mData(mAlloc.allocate(n + (n % 2))), mIsSet(n + (n % 2)) {}
+        explicit hash_map(size_type n) : mData(mAlloc.allocate(getPowerOfTwo(n))), mIsSet(getPowerOfTwo(n)) {}
 
         /**
          *  @brief  Builds an %hash_map from a range.
@@ -205,7 +219,7 @@ namespace fefu
          */
         template<typename InputIterator>
         hash_map(InputIterator first, InputIterator last,
-            size_type n = 0) : mData(mAlloc.allocate(n + (n % 2))), mIsSet(n + (n % 2)) {
+            size_type n = 0) : mData(mAlloc.allocate(getPowerOfTwo(n))), mIsSet(getPowerOfTwo(n)) {
 
             for (auto i = first; i != last; i++) {
                 (*this)[i->first] = i->second;
@@ -227,7 +241,7 @@ namespace fefu
 
         /// Move constructor.
         hash_map(hash_map&& rvalue) {
-            swap(std::move(rvalue));
+            swap(rvalue);
             rvalue.mData = nullptr;
         }
 
@@ -270,7 +284,7 @@ namespace fefu
 
             for (size_t i = 0; i < mIsSet.size(); i++) {
                 if (mIsSet[i] == 1) {
-                    new(mData + i) value_type(umap.mData[i]);
+                    new(mData + i) value_type(std::move(umap.mData[i]));
                 }
             }
         }
@@ -287,6 +301,10 @@ namespace fefu
             size_type n = 0) : hash_map(l.begin(), l.end(), n) {}
 
         ~hash_map() {
+            for (size_type i = 0; i < mIsSet.size(); i++) {
+                if (mIsSet[i] == 1)
+                    mData[i].~value_type();
+            }
             mAlloc.deallocate(mData, mIsSet.size());
         }
 
@@ -339,7 +357,7 @@ namespace fefu
 
         ///  Returns the maximum size of the %hash_map.
         size_type max_size() const noexcept {
-            return MAXSIZE_T;
+            return SIZE_MAX;
         }
 
         // iterators.
@@ -438,13 +456,13 @@ namespace fefu
          */
         template <typename... _Args>
         std::pair<iterator, bool> try_emplace(const key_type& k, _Args&&... args) {
-            return insert(value_type{ k, mapped_type{ std::forward<_Args&&>(args)... } });
+            return insert(value_type( k, mapped_type( std::forward<_Args&&>(args)... )) );
         }
 
         // move-capable overload
         template <typename... _Args>
         std::pair<iterator, bool> try_emplace(key_type&& k, _Args&&... args) {
-            return insert(value_type{ std::forward<key_type>(k), mapped_type{ std::forward<_Args&&>(args)... } });
+            return insert(value_type( std::forward<key_type>(k), mapped_type( std::forward<_Args&&>(args)... )));
         }
 
         //@{
@@ -561,7 +579,7 @@ namespace fefu
          */
         iterator erase(const_iterator position) {
             if (position == this->cend())
-                throw out_of_range("Cant erase end iterator");
+                throw std::out_of_range("Cant erase end iterator");
             (position.data + position.offset)->~value_type();
             (*position.isSet)[position.offset] = 2;
             position++;
@@ -611,12 +629,19 @@ namespace fefu
          *  in any way.  Managing the pointer is the user's responsibility.
          */
         iterator erase(const_iterator first, const_iterator last) {
-            if (first == this->cend())
-                throw out_of_range("Cant erase end iterator");
             for (auto it = first; it != last; ++it) {
                 erase(it);
             }
             return iterator((decltype(iterator::data))last.data, last.offset, last.isSet);
+        }
+
+        template <typename Pred_>
+        void erase_if(Pred_ pred) {
+            for (auto it = begin(); it != end(); ++it) {
+                if (pred(*it)) {
+                    erase(it);
+                }
+            }
         }
 
         /**
@@ -700,7 +725,7 @@ namespace fefu
         iterator find(const key_type& x) {
             if (mCount == 0)
                 return end();
-            size_type indx = innerFind(x);
+            size_type indx = innerSearch(x);
             if (mIsSet[indx] == 1) {
                 return iterator(mData, indx, &mIsSet);
             }
@@ -708,7 +733,7 @@ namespace fefu
         }
 
         const_iterator find(const key_type& x) const {
-            size_type indx = innerFind(x);
+            size_type indx = innerSearch(x);
             if (mIsSet[indx] == 1) {
                 return iterator(mData, indx, &mIsSet);
             }
@@ -735,7 +760,7 @@ namespace fefu
          *  @return  True if there is any element with the specified key.
          */
         bool contains(const key_type& x) const {
-            size_type indx = innerFind(x);
+            size_type indx = innerSearch(x);
             return (mIsSet[indx] == 1);
         }
 
@@ -755,9 +780,9 @@ namespace fefu
         mapped_type& operator[](const key_type& k) {
             checkForRehash();
 
-            size_type indx = innerFind(k);
+            size_type indx = innerSearch(k);
             if (mIsSet[indx] != 1) {
-                indx = innerFind(k, false);
+                indx = innerSearch(k, false);
                 new(mData + indx) value_type(k, mapped_type{});
                 mIsSet[indx] = 1;
                 mCount++;
@@ -780,7 +805,7 @@ namespace fefu
          *  @throw  std::out_of_range  If no such data is present.
          */
         mapped_type& at(const key_type& k) {
-            size_type indx = innerFind(k);
+            size_type indx = innerSearch(k);
             if (mIsSet[indx] != 1) {
                 throw std::out_of_range("This key is not presented in map");
             }
@@ -789,7 +814,7 @@ namespace fefu
         }
 
         const mapped_type& at(const key_type& k) const {
-            size_type indx = innerFind(k);
+            size_type indx = innerSearch(k);
             if (mIsSet[indx] != 1) {
                 throw std::out_of_range("This key is not presented in map");
             }
@@ -811,7 +836,7 @@ namespace fefu
         * @return  The key bucket index.
         */
         size_type bucket(const key_type& _K) const {
-            size_type indx = innerFind(_K);
+            size_type indx = innerSearch(_K);
             if (mIsSet[indx] != 1) {
                 throw std::out_of_range("This key is not presented in map");
             }
@@ -819,10 +844,10 @@ namespace fefu
         }
 
         // hash policy.
-
+        
         /// Returns the average number of elements per bucket.
         float load_factor() const noexcept {
-            return mCount * 1.0 / mIsSet.size();
+            return mCount * 1.0f / mIsSet.size();
         }
 
         /// Returns a positive number that the %hash_map tries to keep the
@@ -837,7 +862,7 @@ namespace fefu
          */
         void max_load_factor(float z) {
             if (z <= 0.0 || z >= 1)
-                throw invalid_argument("Load factor must be positive and less than 1");
+                throw std::invalid_argument("Load factor must be positive and less than 1");
             maxLoadFactor = z;
             checkForRehash();
         }
@@ -850,8 +875,9 @@ namespace fefu
          *  %hash_map maximum load factor.
          */
         void rehash(size_type n) {
-            if (n % 2)
-                n++;
+            n = getPowerOfTwo(n);
+           /* if (n % 2)
+                n++;*/
             hash_map newHashMap(n);
             for (size_type i = 0; i < mIsSet.size(); i++) {
                 if (mIsSet[i] == 1) {
@@ -895,14 +921,14 @@ namespace fefu
         std::vector<char> mIsSet;
         value_type* mData;
 
-        float maxLoadFactor = 0.4;
+        float maxLoadFactor = 0.4f;
 
         const size_t capacityGrowth = 6;
         hasher innerHash;
 
-        size_type innerFind(const key_type& k, bool forFind = true;) const {
+        size_type innerSearch(const key_type& k, bool forFind = true) const {
             size_type indx = mHash(k) % mIsSet.size();
-            uint64_t d = (innerHash(k) + 1) % mIsSet.size();
+            size_type d = (innerHash(indx) + 1ll) % mIsSet.size();
             while (d % 2 == 0)
                 d = (d + 1) % mIsSet.size();
             while (!mKeyEqual(mData[indx].first, k) && (mIsSet[indx] == 1 || (mIsSet[indx] == 2 && forFind))) {
@@ -913,8 +939,8 @@ namespace fefu
         }
 
         bool checkForRehash() {
-            if (mIsSet.size() == 0) {
-                rehash(1);
+            if (mIsSet.size() < 2) {
+                rehash(2);
                 return true;
             }
             if (load_factor() >= maxLoadFactor) {
@@ -922,6 +948,17 @@ namespace fefu
                 return true;
             }
             return false;
+        }
+
+        size_type getPowerOfTwo(size_type n) {
+            n--;
+            n |= n >> 1;
+            n |= n >> 2;
+            n |= n >> 4;
+            n |= n >> 8;
+            n |= n >> 16;
+            n++;
+            return n;
         }
     };
 
