@@ -189,7 +189,7 @@ TEST_CASE("InputIterator constructor", "[hash_map]") {
                                         pair<int, string>(1, "aba"),
                                         pair<int, string>(3, "test") };
 
-    fefu::hash_map<int, string> hmap(data.begin(), data.end());
+    fefu::hash_map<int, string> hmap(data.begin(), data.end(), 3);
     
     REQUIRE(hmap.size() == data.size() - 3);
     for (size_t i = 3; i < data.size(); i++) {
@@ -397,6 +397,7 @@ TEST_CASE("erase", "[hash_map]") {
 
 TEST_CASE("find", "[hash_map]") {
     fefu::hash_map<int, string> hmap;
+    CHECK(hmap.find(2) == hmap.end());
     hmap[1] = "a";
     hmap[2] = "b";
     hmap[-1] = "c";
@@ -506,20 +507,30 @@ TEST_CASE("emplace", "hash_map") {
     CHECK(hmap.size() == 1);
     CHECK(hmap.at(4) == vector<string>({ "aba", "aba" }));
 
-    res = hmap.try_emplace(4, 1, "cab");
+    res = hmap.try_emplace(k, 2, "d");
     CHECK(!res.second);
     CHECK(hmap.size() == 1);
     CHECK(hmap.at(4) == vector<string>({ "aba", "aba" }));
+
+    res = hmap.try_emplace(3, 1, "cab");
+    CHECK(res.second);
+    CHECK(hmap.size() == 2);
+    CHECK(hmap.at(3) == vector<string>({ "cab" }));
+
+    res = hmap.try_emplace(3, 1, "dab");
+    CHECK(!res.second);
+    CHECK(hmap.size() == 2);
+    CHECK(hmap.at(3) == vector<string>({ "cab" }));
 
     vector<string> vec = { "cab", "dab" };
     res = hmap.emplace(4, vec);
     CHECK(!res.second);
-    CHECK(hmap.size() == 1);
+    CHECK(hmap.size() == 2);
     CHECK(hmap.at(4) == vector<string>({ "aba", "aba" }));
 
     res = hmap.emplace(1, vec);
     CHECK(res.second);
-    CHECK(hmap.size() == 2);
+    CHECK(hmap.size() == 3);
     CHECK(hmap.at(1) == vec);
 }
 
@@ -538,6 +549,56 @@ TEST_CASE("erase_if", "[hash_map]") {
     CHECK(!hmap.contains(1));
     CHECK(!hmap.contains(4));
     CHECK(!hmap.contains(5));
+}
+
+TEST_CASE("insert into deleted", "[hash_map]") {
+    fefu::hash_map<int, string> hmap = { pair<int, string>(1, "aba"),
+                                        pair<int, string>(2, "caba"),
+                                        pair<int, string>(3, "caba"),
+                                        pair<int, string>(4, "aba"),
+                                        pair<int, string>(5, "aba"),
+                                        pair<int, string>(6, "test") };
+    hmap.erase_if([](const pair<int, string> tmp) { return true; });
+    for (int i = 0; i < 100; i++) {
+        hmap[i] = "d";
+    }
+    CHECK(hmap.size() == 100);
+
+    hmap.erase_if([](const pair<int, string> tmp) { return true; });
+    for (int i = 0; i < 100; i++) {
+        hmap.insert(make_pair(i, "d"));
+    }
+    CHECK(hmap.size() == 100);
+
+    hmap.erase_if([](const pair<int, string> tmp) { return true; });
+    for (int i = 0; i < 100; i++) {
+        hmap.emplace(make_pair(i, "d"));
+    }
+    CHECK(hmap.size() == 100);
+
+    hmap.erase_if([](const pair<int, string> tmp) { return true; });
+    for (int i = 0; i < 100; i++) {
+        hmap.try_emplace(std::move(i), "d");
+    }
+    CHECK(hmap.size() == 100);
+
+    hmap.erase_if([](const pair<int, string> tmp) { return true; });
+    for (int i = 0; i < 100; i++) {
+        hmap.insert_or_assign(i, "d");
+    }
+    CHECK(hmap.size() == 100);
+
+    hmap.erase_if([](const pair<int, string> tmp) { return true; });
+    for (int i = 0; i < 100; i++) {
+        hmap.insert_or_assign(std::move(i), "d");
+    }
+    CHECK(hmap.size() == 100);
+
+    hmap.erase_if([](const pair<int, string> tmp) { return true; });
+    for (int i = 0; i < 100; i++) {
+        hmap[std::move(i)] = "d";
+    }
+    CHECK(hmap.size() == 100);
 }
 
 // ===========================================
@@ -562,6 +623,7 @@ TEST_CASE("exceptions", "[hash_map]") {
 }
 
 #define BENCHMARK
+#define STDTEST
 #ifdef BENCHMARK
 
 // ===========================================
@@ -759,19 +821,31 @@ void benchmark_t2(size_t rounds) {
 TEST_CASE("BENCHMARK1", "[Benchmark]") {
     size_t rounds = 10000;
     benchmark_t1(rounds);
+#ifdef STDTEST
     benchmark_t2(rounds);
+#endif
 }
 
 TEST_CASE("BENCHMARK2", "[Benchmark]") {
     size_t rounds = 100000;
     benchmark_t1(rounds);
+#ifdef STDTEST
     benchmark_t2(rounds);
+#endif
 }
 
 TEST_CASE("BENCHMARK3", "[Benchmark]") {
     size_t rounds = 1000000;
     benchmark_t1(rounds);
+#ifdef STDTEST
     benchmark_t2(rounds);
+#endif
 }
+
+//TEST_CASE("BENCHMARK4", "[Benchmark]") {
+//    size_t rounds = 10000000;
+//    benchmark_t1(rounds);
+//    benchmark_t2(rounds);
+//}
 
 #endif // BENCHMARK
