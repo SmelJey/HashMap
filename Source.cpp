@@ -192,10 +192,9 @@ TEST_CASE("InputIterator constructor", "[hash_map]") {
     fefu::hash_map<int, string> hmap(data.begin(), data.end(), 3);
     
     REQUIRE(hmap.size() == data.size() - 3);
-    for (size_t i = 3; i < data.size(); i++) {
-        REQUIRE(hmap.contains(data[i].first));
-        CHECK(hmap[data[i].first] == data[i].second);
-    }
+    CHECK(hmap.at(1) == "aba");
+    CHECK(hmap.at(2) == "caba");
+    CHECK(hmap.at(3) == "test");
 }
 
 
@@ -258,7 +257,7 @@ TEST_CASE("Init list constructor", "[hash_map]") {
     REQUIRE(hmap.contains(2));
     REQUIRE(hmap.contains(3));
     CHECK(hmap[1] == "aba");
-    CHECK(hmap[2] == "aba");
+    CHECK(hmap[2] == "caba");
     CHECK(hmap[3] == "test");
 }
 
@@ -283,7 +282,7 @@ TEST_CASE("Assignment operators", "[hash_map]") {
     REQUIRE(hmap2.contains(2));
     REQUIRE(hmap2.contains(3));
     CHECK(hmap2[1] == "aba");
-    CHECK(hmap2[2] == "aba");
+    CHECK(hmap2[2] == "caba");
     CHECK(hmap2[3] == "test");
 }
 

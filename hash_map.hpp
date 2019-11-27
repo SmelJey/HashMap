@@ -219,15 +219,8 @@ namespace fefu
          */
         template<typename InputIterator>
         hash_map(InputIterator first, InputIterator last,
-            size_type n = 0) : mData(mAlloc.allocate(getPowerOfTwo(n))) {
-            n = getPowerOfTwo(n);
-            mNodes = std::vector<IterNode<value_type>>(n + 1);
-            for (size_type i = 0; i < n; i++)
-                mNodes[i].ptr = mData + i;
-
-            for (auto i = first; i != last; i++) {
-                (*this)[i->first] = i->second;
-            }
+            size_type n = 0) : hash_map(n) {
+            insert(first, last);
         }
 
         /// Copy constructor.
