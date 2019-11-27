@@ -662,13 +662,13 @@ namespace fefu
             if constexpr (std::allocator_traits<Alloc>::propagate_on_container_swap::value)
                 swap(this->mAlloc, x.mAalloc);
 
-            std::swap(this->mData, x.mData);
-            std::swap(this->mNodes, x.mNodes);
-            std::swap(this->mCount, x.mCount);
-            std::swap(this->mDeleted, x.mDeleted);
-            std::swap(this->maxLoadFactor, x.maxLoadFactor);
-            std::swap(this->mKeyEqual, x.mKeyEqual);
-            std::swap(this->mHash, x.mHash);
+            swap(this->mData, x.mData);
+            swap(this->mNodes, x.mNodes);
+            swap(this->mCount, x.mCount);
+            swap(this->mDeleted, x.mDeleted);
+            swap(this->maxLoadFactor, x.maxLoadFactor);
+            swap(this->mKeyEqual, x.mKeyEqual);
+            swap(this->mHash, x.mHash);
         }
 
         template<typename _H2, typename _P2>
