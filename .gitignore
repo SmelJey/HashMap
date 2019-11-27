@@ -6,3 +6,6 @@
 /Debug
 /LastCoverageResults.log
 /.opencppcov/HashMap
+/Source.gcno
+/Source.gcda
+/test

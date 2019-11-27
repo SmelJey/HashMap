@@ -11,11 +11,17 @@
 
 namespace fefu
 {
+    enum NodeState {
+        EMPTY,
+        CONTAINS,
+        DELETED
+    };
+
     template <typename ValueType>
     struct IterNode {
-        IterNode() : ptr(nullptr), state(-1) {}
+        IterNode() : ptr(nullptr), state(EMPTY) {}
         ValueType* ptr;
-        char state;
+        NodeState state;
     };
 
     template<typename T>
@@ -77,7 +83,7 @@ namespace fefu
             if (node->ptr == nullptr)
                 throw std::out_of_range("Iterator is out of range");
             ++node;
-            while (node->ptr != nullptr && node->state != 1)
+            while (node->ptr != nullptr && node->state != CONTAINS)
                 ++node;
             return *this;
         }
@@ -103,7 +109,7 @@ namespace fefu
 
     private:
         hash_map_iterator(IterNode<ValueType>* iterNode) : node(iterNode) {
-            while (node->state != 1 && node->ptr != nullptr)
+            while (node->state != CONTAINS && node->ptr != nullptr)
                 ++node;
         }
 
@@ -138,7 +144,7 @@ namespace fefu
             if (node->ptr == nullptr)
                 throw std::out_of_range("Iterator is out of range");
             ++node;
-            while (node->ptr != nullptr && node->state != 1)
+            while (node->ptr != nullptr && node->state != CONTAINS)
                 ++node;
             return *this;
         }
@@ -161,7 +167,7 @@ namespace fefu
 
     private:
         hash_map_const_iterator(IterNode<ValueType>* iterNode) : node(iterNode) {
-            while (node->state != 1 && node->ptr != nullptr)
+            while (node->state != CONTAINS && node->ptr != nullptr)
                 node++;
         }
 
@@ -188,7 +194,7 @@ namespace fefu
         using size_type = std::size_t;
 
         /// Default constructor.
-        hash_map() : mData(0), mNodes(1) {}
+        hash_map() : mData(nullptr), mNodes(1) {}
 
         /**
          *  @brief  Default constructor creates no elements.
@@ -196,7 +202,7 @@ namespace fefu
          */
         explicit hash_map(size_type n) : mData(mAlloc.allocate(getPowerOfTwo(n))) {
             n = getPowerOfTwo(n);
-            mNodes = vector<IterNode<value_type>>(n + 1);
+            mNodes = std::vector<IterNode<value_type>>(n + 1);
             for (size_type i = 0; i < n; i++)
                 mNodes[i].ptr = mData + i;
         }
@@ -215,7 +221,7 @@ namespace fefu
         hash_map(InputIterator first, InputIterator last,
             size_type n = 0) : mData(mAlloc.allocate(getPowerOfTwo(n))) {
             n = getPowerOfTwo(n);
-            mNodes = vector<IterNode<value_type>>(n + 1);
+            mNodes = std::vector<IterNode<value_type>>(n + 1);
             for (size_type i = 0; i < n; i++)
                 mNodes[i].ptr = mData + i;
 
@@ -225,22 +231,22 @@ namespace fefu
         }
 
         /// Copy constructor.
-        hash_map(const hash_map& src) : mNodes(src.mNodes), mAlloc(src.mAlloc),
-                                        maxLoadFactor(src.maxLoadFactor), mCount(src.mCount),
-                                        mHash(src.mHash), mKeyEqual(src.mKeyEqual) {
+        hash_map(const hash_map& src) : mAlloc(src.mAlloc), mHash(src.mHash), mKeyEqual(src.mKeyEqual),
+                                        mCount(src.mCount), mDeleted(src.mDeleted), maxLoadFactor(src.maxLoadFactor),
+                                        mNodes(src.mNodes) {
             mData = mAlloc.allocate(src.mNodes.size() - 1);
 
             for (size_t i = 0; i < mNodes.size() - 1; i++) {
-                if (src.mNodes[i].state == 1) {
+                if (src.mNodes[i].state == CONTAINS) {
                     new(mData + i) value_type(src.mData[i]);
                 }
             }
         }
 
         /// Move constructor.
-        hash_map(hash_map&& rvalue) : mData(std::move(rvalue.mData)), mNodes(std::move(rvalue.mNodes)),
-                                      mCount(std::move(rvalue.mCount)), maxLoadFactor(std::move(rvalue.maxLoadFactor)),
-                                      mAlloc(std::move(rvalue.mAlloc)), mKeyEqual(std::move(rvalue.mKeyEqual)), mHash(std::move(rvalue.mHash)) {
+        hash_map(hash_map&& rvalue) : mAlloc(std::move(rvalue.mAlloc)), mKeyEqual(std::move(rvalue.mKeyEqual)), mHash(std::move(rvalue.mHash)), 
+            mCount(std::move(rvalue.mCount)), mDeleted(std::move(rvalue.mDeleted)), maxLoadFactor(std::move(rvalue.maxLoadFactor)),
+            mNodes(std::move(rvalue.mNodes)), mData(std::move(rvalue.mData)) {
             rvalue.mData = nullptr;
         }
 
@@ -248,8 +254,8 @@ namespace fefu
          *  @brief Creates an %hash_map with no elements.
          *  @param a An allocator object.
          */
-        explicit hash_map(const allocator_type& a) : mAlloc(a) {
-            mData = mAlloc.allocate(0);
+        explicit hash_map(const allocator_type& a) : mAlloc(a), mNodes(1) {
+            mData = nullptr;
         }
 
         /*
@@ -258,13 +264,13 @@ namespace fefu
         * @param  a  An allocator object.
         */
         hash_map(const hash_map& umap,
-            const allocator_type& a) : mAlloc(a), mNodes(umap.mNodes.size()) {
+            const allocator_type& a) : mAlloc(a), mCount(umap.mCount), mDeleted(umap.mDeleted), mNodes(umap.mNodes.size()) {
 
             mData = mAlloc.allocate(umap.mNodes.size() - 1);
 
             for (size_t i = 0; i < mNodes.size() - 1; i++) {
-                if (umap.mNodes[i].state == 1) {
-                    mNodes[i].state = 1;
+                if (umap.mNodes[i].state == CONTAINS) {
+                    mNodes[i].state = CONTAINS;
                     new(mData + i) value_type(umap.mData[i]);
                 }
             }
@@ -276,16 +282,18 @@ namespace fefu
         *  @param  a    An allocator object.
         */
         hash_map(hash_map&& umap,
-            const allocator_type& a) : mAlloc(a), mNodes(std::move(umap.mNodes)),
-                                    mHash(std::move(umap.mHash)), mKeyEqual(std::move(umap.mKeyEqual)),
-                                    mCount(std::move(umap.mCount)), maxLoadFactor(std::move(umap.maxLoadFactor)) {
+            const allocator_type& a) : mAlloc(a), mHash(std::move(umap.mHash)), mKeyEqual(std::move(umap.mKeyEqual)),
+                                    mCount(std::move(umap.mCount)), mDeleted(std::move(umap.mDeleted)), maxLoadFactor(std::move(umap.maxLoadFactor)),
+                                    mNodes(std::move(umap.mNodes)) {
             mData = mAlloc.allocate(mNodes.size() - 1);
 
             for (size_t i = 0; i < mNodes.size() - 1; i++) {
-                if (mNodes[i].state == 1) {
+                if (mNodes[i].state == CONTAINS) {
                     new(mData + i) value_type(std::move(umap.mData[i]));
                 }
             }
+            umap.mAlloc.deallocate(umap.mData, mNodes.size() - 1);
+            umap.mData = nullptr;
         }
 
         /**
@@ -302,7 +310,7 @@ namespace fefu
         ~hash_map() {
             if (mNodes.size() > 0) {
                 for (size_type i = 0; i < mNodes.size() - 1; i++) {
-                    if (mNodes[i].state == 1 || mNodes[i].state == 2)
+                    if (mNodes[i].state == CONTAINS)
                         mData[i].~value_type();
                 }
             }
@@ -312,22 +320,15 @@ namespace fefu
 
         /// Copy assignment operator.
         hash_map& operator=(const hash_map&src) {
-            hash_map tmp(src);
-            swap(tmp);
+            hash_map(src).swap(*this);
             return *this;
         }
 
         /// Move assignment operator.
         hash_map& operator=(hash_map&&src) {
             mAlloc.deallocate(mData, mNodes.size() - 1);
-            mData = std::move(src.mData);
-            mNodes = std::move(src.mNodes);
-            mCount = std::move(src.mCount);
-            mKeyEqual = std::move(src.mKeyEqual);
-            mHash = std::move(src.mHash);
-            maxLoadFactor = std::move(src.maxLoadFactor);
-            mAlloc = std::move(src.mAlloc);
-            src.mData = nullptr;
+            mData = nullptr;
+            swap(src);
             return *this;
         }
 
@@ -343,8 +344,7 @@ namespace fefu
          *  of elements assigned.
          */
         hash_map& operator=(std::initializer_list<value_type> l) {
-            hash_map tmp(l);
-            swap(tmp);
+            hash_map(l).swap(*this);
             return *this;
         }
 
@@ -466,39 +466,13 @@ namespace fefu
          */
         template <typename... _Args>
         std::pair<iterator, bool> try_emplace(const key_type& k, _Args&&... args) {
-            checkForRehash();
-
-            size_type indx = innerSearch(k);
-            if (mNodes[indx].state != 1) {
-                if (mNodes[indx].state == 2) {
-                    mData[indx].~value_type();
-                }
-                new (mData + indx) value_type(k, mapped_type(std::forward<_Args&&>(args)...));
-                mNodes[indx].state = 1;
-                mCount++;
-                return make_pair(iterator(&mNodes[indx]), true);
-            }
-
-            return make_pair(iterator(&mNodes[indx]), false);
+            return innerTryEmplace(k, std::forward<_Args>(args)...);
         }
 
         // move-capable overload
         template <typename... _Args>
         std::pair<iterator, bool> try_emplace(key_type&& k, _Args&&... args) {
-            checkForRehash();
-
-            size_type indx = innerSearch(k);
-            if (mNodes[indx].state != 1) {
-                if (mNodes[indx].state == 2) {
-                    mData[indx].~value_type();
-                }
-                new (mData + indx) value_type(std::move(k), mapped_type(std::forward<_Args&&>(args)...));
-                mNodes[indx].state = 1;
-                mCount++;
-                return make_pair(iterator(&mNodes[indx]), true);
-            }
-
-            return make_pair(iterator(&mNodes[indx]), false);
+            return innerTryEmplace(std::move(k), std::forward<_Args>(args)...);
         }
 
         //@{
@@ -519,28 +493,11 @@ namespace fefu
         *  Insertion requires amortized constant time.
         */
         std::pair<iterator, bool> insert(const value_type& x) {
-            iterator it = find(x.first);
-            if (it != end())
-                return std::make_pair(it, false);
-            (*this)[x.first] = x.second;
-            return std::make_pair(find(x.first), true);
+            return innerInsert(x);
         }
 
         std::pair<iterator, bool> insert(value_type&& x) {
-            checkForRehash();
-
-            size_type indx = innerSearch(x.first);
-            if (mNodes[indx].state != 1) {
-                if (mNodes[indx].state == 2) {
-                    mData[indx].~value_type();
-                }
-                new (mData + indx) value_type(std::forward<value_type&&>(x));
-                mNodes[indx].state = 1;
-                mCount++;
-                return make_pair(iterator(&mNodes[indx]), true);
-            }
-
-            return make_pair(iterator(&mNodes[indx]), false);
+            return innerInsert(std::move(x));
         }
 
         //@}
@@ -595,29 +552,13 @@ namespace fefu
          */
         template <typename _Obj>
         std::pair<iterator, bool> insert_or_assign(const key_type& k, _Obj&& obj) {
-            bool flag = !contains(k);
-            (*this)[k] = std::forward<_Obj&&>(obj);
-            return make_pair(find(k), flag);
+            return innerInsertAssign(k, std::move(obj));
         }
 
         // move-capable overload
         template <typename _Obj>
         std::pair<iterator, bool> insert_or_assign(key_type&& k, _Obj&& obj) {
-            checkForRehash();
-
-            size_type indx = innerSearch(k);
-            if (mNodes[indx].state != 1) {
-                indx = innerSearch(k, false);
-                if (mNodes[indx].state == 2) {
-                    mData[indx].~value_type();
-                }
-                new(mData + indx) value_type(std::forward<key_type&&>(k), mapped_type(std::forward<_Obj&&>(obj)));
-                mNodes[indx].state = 1;
-                mCount++;
-                return make_pair(iterator(&mNodes[indx]), true);
-            }
-            (*this)[std::forward<key_type&&>(k)] = std::forward<_Obj>(obj);
-            return make_pair(iterator(&mNodes[indx]), false);
+            return innerInsertAssign(std::move(k), std::move(obj));
         }
 
         //@{
@@ -638,8 +579,9 @@ namespace fefu
             if (position == this->cend())
                 throw std::out_of_range("Cant erase end iterator");
             (*position.node).ptr->~value_type();
-            (*position.node).state = 2;
+            (*position.node).state = DELETED;
             position++;
+            mDeleted++;
             mCount--;
 
             return iterator(position.node);
@@ -722,33 +664,28 @@ namespace fefu
          *  std::swap(m1,m2) will feed to this function.
          */
         void swap(hash_map& x) {
+            using std::swap;
+
+            if constexpr (std::allocator_traits<Alloc>::propagate_on_container_swap::value)
+                swap(this->mAlloc, x.mAalloc);
+
             std::swap(this->mData, x.mData);
             std::swap(this->mNodes, x.mNodes);
             std::swap(this->mCount, x.mCount);
+            std::swap(this->mDeleted, x.mDeleted);
             std::swap(this->maxLoadFactor, x.maxLoadFactor);
-            std::swap(this->mAlloc, x.mAlloc);
             std::swap(this->mKeyEqual, x.mKeyEqual);
             std::swap(this->mHash, x.mHash);
         }
 
         template<typename _H2, typename _P2>
         void merge(hash_map<K, T, _H2, _P2, Alloc>& source) {
-            for (auto it = source.begin(); it != source.end(); it++) {
-                if (!contains(it->first)) {
-                    insert(std::move(*it));
-                    source.erase(it);
-                }
-            }
+            innerMerge(source);
         }
 
         template<typename _H2, typename _P2>
         void merge(hash_map<K, T, _H2, _P2, Alloc>&& source) {
-            for (auto it = source.begin(); it != source.end(); it++) {
-                if (!contains(it->first)) {
-                    insert(std::move(*it));
-                    source.erase(it);
-                }
-            }
+            innerMerge(std::move(source));
         }
 
         // observers.
@@ -783,7 +720,7 @@ namespace fefu
             if (mCount == 0)
                 return end();
             size_type indx = innerSearch(x);
-            if (mNodes[indx].state == 1) {
+            if (mNodes[indx].state == CONTAINS) {
                 return iterator((decltype(iterator::node))&mNodes[indx]);
             }
             return end();
@@ -791,7 +728,7 @@ namespace fefu
 
         const_iterator find(const key_type& x) const {
             size_type indx = innerSearch(x);
-            if (mNodes[indx].state == 1) {
+            if (mNodes[indx].state == CONTAINS) {
                 return iterator((decltype(iterator::node))&mNodes[indx]);
             }
             return end();
@@ -818,7 +755,7 @@ namespace fefu
          */
         bool contains(const key_type& x) const {
             size_type indx = innerSearch(x);
-            return (mNodes[indx].state == 1);
+            return (mNodes[indx].state == CONTAINS);
         }
 
         //@{
@@ -835,34 +772,11 @@ namespace fefu
          *  Lookup requires constant time.
          */
         mapped_type& operator[](const key_type& k) {
-            checkForRehash();
-
-            size_type indx = innerSearch(k);
-            if (mNodes[indx].state != 1) {
-                indx = innerSearch(k, false);
-                new(mData + indx) value_type(k, mapped_type{});
-                mNodes[indx].state = 1;
-                mCount++;
-            }
-
-            return mData[indx].second;
+            return innerOperator(k);
         }
 
         mapped_type& operator[](key_type&& k) {
-            checkForRehash();
-
-            size_type indx = innerSearch(k);
-            if (mNodes[indx].state != 1) {
-                indx = innerSearch(k, false);
-                if (mNodes[indx].state == 2) {
-                    mData[indx].~value_type();
-                }
-                new(mData + indx) value_type(std::forward<key_type&&>(k), mapped_type{});
-                mNodes[indx].state = 1;
-                mCount++;
-            }
-
-            return mData[indx].second;
+            return innerOperator(std::move(k));
         }
         //@}
 
@@ -876,7 +790,7 @@ namespace fefu
          */
         mapped_type& at(const key_type& k) {
             size_type indx = innerSearch(k);
-            if (mNodes[indx].state != 1) {
+            if (mNodes[indx].state != CONTAINS) {
                 throw std::out_of_range("This key is not presented in map");
             }
 
@@ -885,7 +799,7 @@ namespace fefu
 
         const mapped_type& at(const key_type& k) const {
             size_type indx = innerSearch(k);
-            if (mNodes[indx].state != 1) {
+            if (mNodes[indx].state != CONTAINS) {
                 throw std::out_of_range("This key is not presented in map");
             }
 
@@ -907,7 +821,7 @@ namespace fefu
         */
         size_type bucket(const key_type& _K) const {
             size_type indx = innerSearch(_K);
-            if (mNodes[indx].state != 1) {
+            if (mNodes[indx].state != CONTAINS) {
                 throw std::out_of_range("This key is not presented in map");
             }
             return indx;
@@ -917,7 +831,7 @@ namespace fefu
         
         /// Returns the average number of elements per bucket.
         float load_factor() const noexcept {
-            return mCount * 1.0f / (mNodes.size() - 1);
+            return (mCount * 1.0f + mDeleted) / (mNodes.size() - 1);
         }
 
         /// Returns a positive number that the %hash_map tries to keep the
@@ -946,9 +860,10 @@ namespace fefu
          */
         void rehash(size_type n) {
             n = getPowerOfTwo(n);
+            mDeleted = 0;
             hash_map newHashMap(n);
             for (size_type i = 0; i < mNodes.size() - 1; i++) {
-                if (mNodes[i].state == 1) {
+                if (mNodes[i].state == CONTAINS) {
                     newHashMap[mData[i].first] = std::move(mData[i].second);
                 }
             }
@@ -971,7 +886,7 @@ namespace fefu
                 return false;
 
             for (size_type i = 0; i < mNodes.size() - 1; i++) {
-                if (mNodes[i].state == 1 && (!other.contains(mData[i].first)
+                if (mNodes[i].state == CONTAINS && (!other.contains(mData[i].first)
                                     || other.at(mData[i].first) != mData[i].second)) {
                     return false;
                 }
@@ -980,18 +895,19 @@ namespace fefu
         }
 
     private:
-        size_type mCount = 0;
         Alloc mAlloc;
         hasher mHash;
-        
         key_equal mKeyEqual;
+
+        size_type mCount = 0;
+        size_type mDeleted = 0;
+        float maxLoadFactor = 0.4f;
 
         std::vector<IterNode<value_type>> mNodes;
         value_type* mData;
 
-        float maxLoadFactor = 0.4f;
-
         const size_t capacityGrowth = 6;
+
         inline size_type innerHash(size_type n) const {
             return (64567 * (n + 1) + 5672) % 655360001;
         }
@@ -1001,7 +917,7 @@ namespace fefu
             size_type indx = mHash(k) % bucket_count();
             size_type d = innerHash(indx);
             d += (d % 2) == 0;
-            while (!mKeyEqual(mData[indx].first, k) && (mNodes[indx].state == 1 || (mNodes[indx].state == 2 && forFind))) {
+            while (!mKeyEqual(mData[indx].first, k) && (mNodes[indx].state == CONTAINS) || mNodes[indx].state == DELETED) {
                 indx = (indx + d) % bucket_count();
             }
 
@@ -1030,6 +946,81 @@ namespace fefu
             n++;
             return n;
         }
+
+        template <typename _T>
+        std::pair<iterator, bool> innerInsert(_T&& el) {
+            checkForRehash();
+
+            size_type indx = innerSearch(el.first);
+            if (mNodes[indx].state == EMPTY) {
+                new (mData + indx) value_type(std::forward<_T>(el));
+                mNodes[indx].state = CONTAINS;
+                mCount++;
+                return make_pair(iterator(&mNodes[indx]), true);
+            }
+
+            return make_pair(iterator(&mNodes[indx]), false);
+        }
+
+        template <typename _T>
+        mapped_type& innerOperator(_T&& k) {
+            checkForRehash();
+
+            size_type indx = innerSearch(k);
+            if (mNodes[indx].state == EMPTY) {
+                indx = innerSearch(k, false);
+                new(mData + indx) value_type(std::forward<_T>(k), mapped_type());
+                mNodes[indx].state = CONTAINS;
+                mCount++;
+            }
+
+            return mData[indx].second;
+        }
+
+        template<typename _T>
+        void innerMerge(_T&& source) {
+            for (auto it = source.begin(); it != source.end(); it++) {
+                if (!contains(it->first)) {
+                    insert(std::move(*it));
+                    source.erase(it);
+                }
+            }
+            return;
+        }
+
+        template<typename... _Args, typename _T>
+        std::pair<iterator, bool> innerTryEmplace(_T&& k, _Args&&... args) {
+            checkForRehash();
+
+            size_type indx = innerSearch(k);
+            if (mNodes[indx].state == EMPTY) {
+                new (mData + indx) value_type(std::piecewise_construct,
+                    std::forward_as_tuple(std::move(k)),
+                    std::forward_as_tuple(std::forward<_Args>(args)...));
+                mNodes[indx].state = CONTAINS;
+                mCount++;
+                return make_pair(iterator(&mNodes[indx]), true);
+            }
+
+            return make_pair(iterator(&mNodes[indx]), false);
+        }
+
+        template <typename _Obj, typename _T>
+        std::pair<iterator, bool> innerInsertAssign(_T&& k, _Obj&& obj) {
+            checkForRehash();
+
+            size_type indx = innerSearch(k);
+            if (mNodes[indx].state == EMPTY) {
+                indx = innerSearch(k, false);
+                new(mData + indx) value_type(std::move(k), mapped_type(std::forward<_Obj>(obj)));
+                mNodes[indx].state = CONTAINS;
+                mCount++;
+                return std::make_pair(iterator(&mNodes[indx]), true);
+            }
+            (*this)[std::forward<_T>(k)] = std::move(obj);
+            return std::make_pair(iterator(&mNodes[indx]), false);
+        }
+
     };
 
 } // namespace fefu
