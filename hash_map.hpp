@@ -857,7 +857,8 @@ namespace fefu
             hash_map newHashMap(n);
             for (size_type i = 0; i < mNodes.size() - 1; i++) {
                 if (mNodes[i].state == CONTAINS) {
-                    newHashMap[mData[i].first] = std::move(mData[i].second);
+                    mCount++;
+                    newHashMap.emplace(std::move(mData[i].first), std::move(mData[i].second));
                 }
             }
             swap(newHashMap);
@@ -1010,7 +1011,8 @@ namespace fefu
                 mCount++;
                 return std::make_pair(iterator(&mNodes[indx]), true);
             }
-            (*this)[std::forward<_T>(k)] = std::move(obj);
+            mData[indx].second = std::move(obj);
+            
             return std::make_pair(iterator(&mNodes[indx]), false);
         }
 

@@ -124,7 +124,7 @@ TEST_CASE("operator==", "[hash_map]") {
     fefu::hash_map<int, string> hmap2(20);
     fefu::hash_map<int, string> hmap3(20);
 
-    
+
 
     CHECK(hmap1 == hmap2);
     CHECK(hmap2 == hmap3);
@@ -190,7 +190,7 @@ TEST_CASE("InputIterator constructor", "[hash_map]") {
                                         pair<int, string>(3, "test") };
 
     fefu::hash_map<int, string> hmap(data.begin(), data.end(), 3);
-    
+
     REQUIRE(hmap.size() == data.size() - 3);
     CHECK(hmap.at(1) == "aba");
     CHECK(hmap.at(2) == "caba");
@@ -379,7 +379,7 @@ TEST_CASE("erase", "[hash_map]") {
 
     count = hmap.erase(5);
     CHECK(count == 0);
-    
+
     for (int i = 0; i < 5; i++) {
         hmap[i] = "test";
     }
@@ -543,7 +543,7 @@ TEST_CASE("erase_if", "[hash_map]") {
 
     hmap.erase_if([](pair<const int, string>& tmp) {
         return tmp.second == "aba";
-    });
+        });
     CHECK(hmap.size() == 3);
     CHECK(!hmap.contains(1));
     CHECK(!hmap.contains(4));
@@ -621,8 +621,8 @@ TEST_CASE("exceptions", "[hash_map]") {
     CHECK_THROWS(hmap.erase(hmap.cend()));
 }
 
-//#define BENCHMARK
-//#define STDTEST
+#define BENCHMARK
+#define STDTEST
 #ifdef BENCHMARK
 
 // ===========================================
