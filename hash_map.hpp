@@ -975,7 +975,7 @@ namespace fefu
         void innerMerge(_T&& source) {
             for (auto it = source.begin(); it != source.end(); it++) {
                 if (!contains(it->first)) {
-                    insert(std::move(*it));
+                    insert(std::forward<value_type>(*it));
                     source.erase(it);
                 }
             }
@@ -989,7 +989,7 @@ namespace fefu
             size_type indx = innerSearch(k);
             if (mNodes[indx].state == EMPTY) {
                 new (mData + indx) value_type(std::piecewise_construct,
-                    std::forward_as_tuple(std::move(k)),
+                    std::forward_as_tuple(std::forward<_T>(k)),
                     std::forward_as_tuple(std::forward<_Args>(args)...));
                 mNodes[indx].state = CONTAINS;
                 mCount++;
@@ -1006,7 +1006,7 @@ namespace fefu
             size_type indx = innerSearch(k);
             if (mNodes[indx].state == EMPTY) {
                 indx = innerSearch(k, false);
-                new(mData + indx) value_type(std::move(k), mapped_type(std::forward<_Obj>(obj)));
+                new(mData + indx) value_type(std::forward<_T>(k), mapped_type(std::move(obj)));
                 mNodes[indx].state = CONTAINS;
                 mCount++;
                 return std::make_pair(iterator(&mNodes[indx]), true);
